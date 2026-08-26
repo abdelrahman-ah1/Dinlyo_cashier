@@ -1,0 +1,20 @@
+{
+  "name": "pos-kds-edge-server",
+  "version": "1.0.0",
+  "description": "Branch Edge Server: REST API + local WebSocket hub for POS <-> KDS sync",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^17.4.2",
+    "fastify": "^4.28.1",
+    "mongodb": "^7.6.0",
+    "nanoid": "^5.0.7",
+    "ws": "^8.18.0"
+  }
+}
