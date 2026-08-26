@@ -1,5 +1,19 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store';
+import { notify } from '../components/Toast';
+import {
+  ShoppingBag,
+  UtensilsCrossed,
+  QrCode,
+  CreditCard,
+  Banknote,
+  Send,
+  Check,
+  Minus,
+  Plus,
+  X,
+  Loader2
+} from 'lucide-react';
 
 export default function POS({ onOpenQrModal }) {
   const { menu, tables, orders, placeOrder, payOrder } = useStore();
@@ -28,6 +42,7 @@ export default function POS({ onOpenQrModal }) {
       }
       return [...prev, { item, quantity: 1 }];
     });
+    notify.info('Added to Cart', `${item.name} • EGP ${item.price.toFixed(2)}`, 1800);
   };
 
   const changeQty = (itemId, delta) => {
@@ -44,16 +59,17 @@ export default function POS({ onOpenQrModal }) {
   const handleSend = async () => {
     setSending(true);
     try {
-      await placeOrder({
+      const order = await placeOrder({
         tableId: orderType === 'dine_in' ? selectedTable : null,
         orderType,
         items: cart.map((l) => ({ item_id: l.item.id, quantity: l.quantity })),
       });
       setCart([]);
       setJustSent(true);
+      notify.success('Sent to Kitchen', `Ticket #${order.id.slice(0, 6).toUpperCase()} sent to KDS board.`);
       setTimeout(() => setJustSent(false), 1600);
     } catch (e) {
-      alert(e.message);
+      notify.error('Order Failed', e.message);
     } finally {
       setSending(false);
     }
@@ -64,10 +80,14 @@ export default function POS({ onOpenQrModal }) {
     setProcessingPay(true);
     try {
       await payOrder(paymentModalOrder.id, paymentModalOrder.total, method);
+      notify.success(
+        'Payment Settled',
+        `Order #${paymentModalOrder.id.slice(0, 6).toUpperCase()} cleared via ${method.toUpperCase()}. Receipt spooled.`
+      );
       setPaymentModalOrder(null);
       setProcessingPay(false);
     } catch (e) {
-      alert('Payment failed: ' + e.message);
+      notify.error('Payment Failed', e.message);
       setProcessingPay(false);
     }
   };
@@ -96,7 +116,7 @@ export default function POS({ onOpenQrModal }) {
                     setOrderType('dine_in');
                   }}
                 >
-                  Table {t.table_number}
+                  <span>Table {t.table_number}</span>
                   <span className="zone">{t.zone}</span>
                 </button>
                 {onOpenQrModal && (
@@ -108,7 +128,8 @@ export default function POS({ onOpenQrModal }) {
                       onOpenQrModal(t);
                     }}
                   >
-                    📱 QR
+                    <QrCode size={10} style={{ marginRight: '2px' }} />
+                    <span>QR</span>
                   </button>
                 )}
               </div>
@@ -120,11 +141,15 @@ export default function POS({ onOpenQrModal }) {
         {activeTableOrder && (
           <div className="active-table-order-banner">
             <div className="banner-info">
-              <span>🍽️ <strong>Table {tables.find(t => t.id === selectedTable)?.table_number}</strong> has an active order #{activeTableOrder.id.slice(0, 5).toUpperCase()} ({activeTableOrder.items?.length} items)</span>
-              <span className="banner-total">Total: EGP {activeTableOrder.total?.toFixed(2)}</span>
+              <UtensilsCrossed size={18} style={{ color: '#3b82f6' }} />
+              <div>
+                <span><strong>Table {tables.find(t => t.id === selectedTable)?.table_number}</strong> has an active order #{activeTableOrder.id.slice(0, 5).toUpperCase()} ({activeTableOrder.items?.length} items)</span>
+              </div>
+              <span className="banner-total">EGP {activeTableOrder.total?.toFixed(2)}</span>
             </div>
             <button className="btn-settle-order" onClick={() => setPaymentModalOrder(activeTableOrder)}>
-              💳 Settle & Print Receipt
+              <CreditCard size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+              <span>Settle & Print Receipt</span>
             </button>
           </div>
         )}
@@ -153,29 +178,49 @@ export default function POS({ onOpenQrModal }) {
 
       <div className="cart-panel">
         <div className="cart-header">
-          <h2>Current Order</h2>
-          <div className="sub">
-            {orderType === 'dine_in'
-              ? selectedTable
-                ? `Table ${tables.find((t) => t.id === selectedTable)?.table_number}`
-                : 'No table selected'
-              : 'Takeaway'}
+          <div>
+            <h2>Current Order</h2>
+            <div className="sub">
+              {orderType === 'dine_in'
+                ? selectedTable
+                  ? `Table ${tables.find((t) => t.id === selectedTable)?.table_number}`
+                  : 'No table selected'
+                : 'Takeaway Order'}
+            </div>
           </div>
+          <ShoppingBag size={18} style={{ color: 'var(--text-faint)' }} />
         </div>
 
         <div className="cart-items">
-          {cart.length === 0 && <div className="cart-empty">Tap menu items to add them here</div>}
-          {cart.map((line) => (
-            <div className="cart-line" key={line.item.id}>
-              <span className="name">{line.item.name}</span>
-              <div className="qty-controls">
-                <button className="qty-btn" onClick={() => changeQty(line.item.id, -1)}>−</button>
-                <span>{line.quantity}</span>
-                <button className="qty-btn" onClick={() => changeQty(line.item.id, 1)}>+</button>
+          {cart.length === 0 ? (
+            <div className="cart-empty">
+              <div className="cart-empty-icon">
+                <ShoppingBag size={22} />
               </div>
-              <span className="line-total">EGP {(line.item.price * line.quantity).toFixed(0)}</span>
+              <div style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-dim)' }}>
+                Your order is empty
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-faint)', maxWidth: '180px' }}>
+                Tap menu cards on the left to add items to this ticket.
+              </div>
             </div>
-          ))}
+          ) : (
+            cart.map((line) => (
+              <div className="cart-line" key={line.item.id}>
+                <span className="name">{line.item.name}</span>
+                <div className="qty-controls">
+                  <button className="qty-btn" onClick={() => changeQty(line.item.id, -1)}>
+                    <Minus size={12} />
+                  </button>
+                  <span style={{ minWidth: '16px', textAlign: 'center', fontWeight: 700 }}>{line.quantity}</span>
+                  <button className="qty-btn" onClick={() => changeQty(line.item.id, 1)}>
+                    <Plus size={12} />
+                  </button>
+                </div>
+                <span className="line-total">EGP {(line.item.price * line.quantity).toFixed(0)}</span>
+              </div>
+            ))
+          )}
         </div>
 
         <div className="cart-footer">
@@ -184,7 +229,8 @@ export default function POS({ onOpenQrModal }) {
               className={orderType === 'dine_in' ? 'active' : ''}
               onClick={() => setOrderType('dine_in')}
             >
-              Dine-in
+              <UtensilsCrossed size={13} />
+              <span>Dine-in</span>
             </button>
             <button
               className={orderType === 'takeaway' ? 'active' : ''}
@@ -193,15 +239,31 @@ export default function POS({ onOpenQrModal }) {
                 setSelectedTable(null);
               }}
             >
-              Takeaway
+              <ShoppingBag size={13} />
+              <span>Takeaway</span>
             </button>
           </div>
           <div className="cart-total-row">
             <span>Total</span>
-            <span>EGP {total.toFixed(0)}</span>
+            <span className="total-amt">EGP {total.toFixed(0)}</span>
           </div>
           <button className="send-btn" disabled={!canSend || sending} onClick={handleSend}>
-            {justSent ? 'Sent to kitchen ✓' : sending ? 'Sending…' : 'Send to kitchen'}
+            {justSent ? (
+              <>
+                <Check size={16} />
+                <span>Sent to Kitchen!</span>
+              </>
+            ) : sending ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Sending…</span>
+              </>
+            ) : (
+              <>
+                <Send size={16} />
+                <span>Send to Kitchen</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -211,16 +273,19 @@ export default function POS({ onOpenQrModal }) {
         <div className="modal-backdrop" onClick={() => setPaymentModalOrder(null)}>
           <div className="modal-card payment-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>💳 Settle Order #{paymentModalOrder.id.slice(0, 6).toUpperCase()}</h3>
-              <button className="btn-close" onClick={() => setPaymentModalOrder(null)}>×</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={18} style={{ color: 'var(--accent)' }} />
+                <h3>Settle Order #{paymentModalOrder.id.slice(0, 6).toUpperCase()}</h3>
+              </div>
+              <button className="btn-close" onClick={() => setPaymentModalOrder(null)}><X size={18} /></button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ padding: '20px' }}>
               <div className="pay-amount-display">
                 <span className="label">Total Amount Due:</span>
                 <span className="value">EGP {paymentModalOrder.total?.toFixed(2)}</span>
               </div>
-              <p style={{ fontSize: '12px', opacity: 0.8, textAlign: 'center', marginBottom: '20px' }}>
-                Selecting Cash will trigger the cash drawer kick solenoid (FR-5.3) and dispatch an itemized thermal receipt (FR-5.2).
+              <p style={{ fontSize: '12px', color: 'var(--text-dim)', textAlign: 'center', marginBottom: '20px' }}>
+                Selecting Cash automatically triggers the cash drawer kick solenoid (FR-5.3) and dispatches an itemized thermal receipt (FR-5.2).
               </p>
               <div className="tender-btn-grid">
                 <button
@@ -228,7 +293,7 @@ export default function POS({ onOpenQrModal }) {
                   disabled={processingPay}
                   onClick={() => handleProcessPayment('cash')}
                 >
-                  <span style={{ fontSize: '24px' }}>💵</span>
+                  <Banknote size={32} />
                   <span>Cash Payment</span>
                   <small>Kicks drawer & prints receipt</small>
                 </button>
@@ -237,7 +302,7 @@ export default function POS({ onOpenQrModal }) {
                   disabled={processingPay}
                   onClick={() => handleProcessPayment('card')}
                 >
-                  <span style={{ fontSize: '24px' }}>💳</span>
+                  <CreditCard size={32} />
                   <span>Card / Terminal</span>
                   <small>Captures terminal & prints receipt</small>
                 </button>
@@ -249,3 +314,4 @@ export default function POS({ onOpenQrModal }) {
     </div>
   );
 }
+

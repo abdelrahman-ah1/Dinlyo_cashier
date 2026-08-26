@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { api } from '../api';
+import { notify } from '../components/Toast';
+import {
+  Boxes,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  X,
+  ChefHat
+} from 'lucide-react';
 
 export default function Inventory() {
   const { inventory, inventoryLoading, fetchInventory, updateInventoryStock, branchId, currentUser } = useStore();
@@ -9,7 +19,6 @@ export default function Inventory() {
   const [activeTab, setActiveTab] = useState('stock'); // 'stock' | 'recipes'
   const [editingItem, setEditingItem] = useState(null);
   const [adjustQty, setAdjustQty] = useState('');
-  const [feedbackMsg, setFeedbackMsg] = useState(null);
 
   useEffect(() => {
     fetchInventory();
@@ -34,12 +43,14 @@ export default function Inventory() {
     if (!editingItem || adjustQty === '') return;
     try {
       await updateInventoryStock(editingItem.id, Number(adjustQty));
-      setFeedbackMsg(`Updated ${editingItem.name} stock to ${adjustQty} ${editingItem.unit}`);
+      notify.success(
+        'Stock Updated',
+        `${editingItem.name} stock level reset to ${adjustQty} ${editingItem.unit}.`
+      );
       setEditingItem(null);
       setAdjustQty('');
-      setTimeout(() => setFeedbackMsg(null), 3000);
     } catch (err) {
-      alert('Failed to update stock: ' + err.message);
+      notify.error('Update Failed', err.message || 'Failed to update stock');
     }
   };
 
@@ -48,37 +59,50 @@ export default function Inventory() {
   return (
     <div className="inventory-page">
       <div className="inv-header">
-        <div>
-          <h2>📦 Ingredient Inventory & Recipe Deductions</h2>
-          <p className="inv-subtitle">
-            Real-time stock depletion linked to menu orders (FR-6.1, FR-6.2, FR-6.3)
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            background: 'rgba(249, 115, 22, 0.15)',
+            color: 'var(--accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Boxes size={24} />
+          </div>
+          <div>
+            <h2>Ingredient Inventory & Recipe Deductions</h2>
+            <p className="inv-subtitle">
+              Real-time stock depletion linked to menu orders (FR-6.1, FR-6.2, FR-6.3)
+            </p>
+          </div>
         </div>
         <div className="inv-tabs">
           <button
             className={`inv-tab-btn ${activeTab === 'stock' ? 'active' : ''}`}
             onClick={() => setActiveTab('stock')}
           >
-            Ingredient Stock ({totalItems})
+            <Boxes size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+            <span>Stock Levels ({totalItems})</span>
           </button>
           <button
             className={`inv-tab-btn ${activeTab === 'recipes' ? 'active' : ''}`}
             onClick={() => setActiveTab('recipes')}
           >
-            Menu Recipes ({recipes.length})
+            <ChefHat size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+            <span>Recipes ({recipes.length})</span>
           </button>
         </div>
       </div>
 
-      {feedbackMsg && (
-        <div className="feedback-banner success">
-          ✓ {feedbackMsg}
-        </div>
-      )}
-
       {lowStockItems.length > 0 && activeTab === 'stock' && (
-        <div className="feedback-banner warning">
-          ⚠️ <strong>Low Stock Alert:</strong> {lowStockItems.map(i => `${i.name} (${i.stock_qty} ${i.unit} left)`).join(', ')}
+        <div className="feedback-banner warning" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <AlertTriangle size={18} style={{ color: '#f59e0b', flexShrink: 0 }} />
+          <div>
+            <strong>Low Stock Alert:</strong> {lowStockItems.map(i => `${i.name} (${i.stock_qty} ${i.unit} left)`).join(', ')}
+          </div>
         </div>
       )}
 
@@ -87,22 +111,31 @@ export default function Inventory() {
         <div className="inv-kpi-card">
           <div className="kpi-label">Total Ingredients</div>
           <div className="kpi-value">{totalItems}</div>
-          <div className="kpi-foot">Tracked across catalog</div>
+          <div className="kpi-foot">Tracked across menu catalog</div>
         </div>
         <div className="inv-kpi-card in-stock">
-          <div className="kpi-label">Adequate Stock</div>
+          <div className="kpi-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <CheckCircle2 size={13} style={{ color: '#10b981' }} />
+            <span>Adequate Stock</span>
+          </div>
           <div className="kpi-value">{inStockItems.length}</div>
-          <div className="kpi-foot">Healthy inventory</div>
+          <div className="kpi-foot">Healthy inventory levels</div>
         </div>
         <div className="inv-kpi-card low-stock">
-          <div className="kpi-label">Low Stock Warnings</div>
+          <div className="kpi-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <AlertTriangle size={13} style={{ color: '#f59e0b' }} />
+            <span>Low Stock Warnings</span>
+          </div>
           <div className="kpi-value">{lowStockItems.length}</div>
-          <div className="kpi-foot">At or below reorder level</div>
+          <div className="kpi-foot">At or below reorder threshold</div>
         </div>
         <div className="inv-kpi-card out-stock">
-          <div className="kpi-label">Out of Stock</div>
+          <div className="kpi-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <XCircle size={13} style={{ color: '#ef4444' }} />
+            <span>Out of Stock</span>
+          </div>
           <div className="kpi-value">{outOfStockItems.length}</div>
-          <div className="kpi-foot">Requires immediate restock</div>
+          <div className="kpi-foot">Requires immediate supplier order</div>
         </div>
       </div>
 
@@ -111,8 +144,17 @@ export default function Inventory() {
         <div className="inv-table-card">
           <div className="table-card-head">
             <h3>Current Stock Levels</h3>
-            <button className="btn-refresh" onClick={fetchInventory} disabled={inventoryLoading}>
-              {inventoryLoading ? 'Refreshing...' : '🔄 Refresh Stock'}
+            <button
+              className="btn-refresh"
+              onClick={() => {
+                fetchInventory();
+                notify.info('Inventory', 'Stock records refreshed');
+              }}
+              disabled={inventoryLoading}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <RefreshCw size={13} className={inventoryLoading ? 'animate-spin' : ''} />
+              <span>{inventoryLoading ? 'Refreshing...' : 'Refresh Stock'}</span>
             </button>
           </div>
 
@@ -134,7 +176,7 @@ export default function Inventory() {
                 return (
                   <tr key={item.id} className={`status-row-${item.status}`}>
                     <td className="font-semibold">{item.name}</td>
-                    <td><span className="category-pill">{item.category}</span></td>
+                    <td><span className="category-pill" style={{ padding: '3px 10px', fontSize: '11px' }}>{item.category}</span></td>
                     <td>
                       <div className="stock-level-cell">
                         <span className="stock-num">{item.stock_qty} {item.unit}</span>
@@ -165,7 +207,7 @@ export default function Inventory() {
                           Restock
                         </button>
                       ) : (
-                        <span className="text-muted" style={{ fontSize: '11px' }}>Manager only</span>
+                        <span className="text-muted" style={{ fontSize: '11px', color: 'var(--text-faint)' }}>Manager only</span>
                       )}
                     </td>
                   </tr>
@@ -211,30 +253,63 @@ export default function Inventory() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Restock {editingItem.name}</h3>
-              <button className="btn-close" onClick={() => setEditingItem(null)}>×</button>
+              <button className="btn-close" onClick={() => setEditingItem(null)}><X size={18} /></button>
             </div>
-            <form onSubmit={handleSaveStock} className="modal-body">
-              <p style={{ fontSize: '13px', opacity: 0.8, marginBottom: '16px' }}>
+            <form onSubmit={handleSaveStock} className="modal-body" style={{ padding: '20px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--text-dim)', marginBottom: '16px' }}>
                 Current stock: <strong>{editingItem.stock_qty} {editingItem.unit}</strong> (Reorder threshold: {editingItem.reorder_level} {editingItem.unit})
               </p>
-              <div className="form-group">
-                <label>New Stock Quantity ({editingItem.unit}):</label>
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>
+                  New Stock Quantity ({editingItem.unit}):
+                </label>
                 <input
                   type="number"
                   min="0"
                   step="any"
                   className="input-number"
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-2)',
+                    color: 'var(--text)',
+                    fontSize: '15px'
+                  }}
                   value={adjustQty}
                   onChange={(e) => setAdjustQty(e.target.value)}
                   autoFocus
                   required
                 />
               </div>
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setEditingItem(null)}>
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text)'
+                  }}
+                  onClick={() => setEditingItem(null)}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '8px',
+                    background: 'var(--accent)',
+                    border: 'none',
+                    color: 'white',
+                    fontWeight: 700
+                  }}
+                >
                   Save Stock Level
                 </button>
               </div>
@@ -245,3 +320,4 @@ export default function Inventory() {
     </div>
   );
 }
+

@@ -1,5 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
 import { useStore } from '../store';
+import { notify } from '../components/Toast';
+import {
+  ChefHat,
+  Bell,
+  BellOff,
+  Volume2,
+  Clock,
+  Flame,
+  Check,
+  Smartphone
+} from 'lucide-react';
 
 const NEXT_STATUS = { placed: 'in_prep', in_prep: 'ready', ready: 'served' };
 const ACTION_LABEL = { placed: 'Start prep', in_prep: 'Mark ready', ready: 'Serve' };
@@ -15,7 +26,11 @@ function useNow() {
 }
 
 function elapsedLabel(createdAt, now) {
-  const seconds = Math.max(0, Math.floor((now - new Date(createdAt + 'Z').getTime()) / 1000));
+  if (!createdAt) return { text: '0:00', seconds: 0 };
+  const dateStr = typeof createdAt === 'string' && !createdAt.endsWith('Z') ? `${createdAt}Z` : createdAt;
+  const time = new Date(dateStr).getTime();
+  if (isNaN(time)) return { text: '0:00', seconds: 0 };
+  const seconds = Math.max(0, Math.floor((now - time) / 1000));
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return { text: `${m}:${String(s).padStart(2, '0')}`, seconds };
@@ -69,6 +84,7 @@ export default function KDS() {
       if (soundEnabled) {
         playKitchenChime();
       }
+      notify.info('New Ticket Arrived', 'Kitchen queue updated with a new order.');
     }
   }, [lastNewOrderArrival, soundEnabled]);
 
@@ -89,24 +105,57 @@ export default function KDS() {
           <button
             className={`btn-chime-toggle ${soundEnabled ? 'active' : 'muted'}`}
             onClick={() => {
-              setSoundEnabled(!soundEnabled);
-              if (!soundEnabled) playKitchenChime();
+              const nextState = !soundEnabled;
+              setSoundEnabled(nextState);
+              if (nextState) playKitchenChime();
+              notify.info('Kitchen Sound', nextState ? 'Chime alerts enabled' : 'Chime alerts muted');
             }}
             title="Toggle kitchen sound chime"
           >
-            {soundEnabled ? '🔔 Chime On' : '🔕 Chime Muted'}
+            {soundEnabled ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <Bell size={14} /> Chime On
+              </span>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <BellOff size={14} /> Chime Muted
+              </span>
+            )}
           </button>
-          <button className="btn-test-chime" onClick={() => playKitchenChime()} title="Test ticket arrival chime">
-            🎵 Test Chime
+          <button
+            className="btn-test-chime"
+            onClick={() => {
+              playKitchenChime();
+              notify.info('Audio Check', 'Synthesized 587Hz -> 880Hz alert played');
+            }}
+            title="Test ticket arrival chime"
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Volume2 size={14} /> Test Chime
+            </span>
           </button>
         </div>
       </div>
 
       {activeOrders.length === 0 && (
         <div className="kds-empty">
-          <div style={{ fontSize: '32px', marginBottom: '12px' }}>👨‍🍳</div>
-          <div>No active tickets in queue.</div>
-          <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>New orders sent from POS or QR Guest App appear here in &lt;1 second with chime alert.</div>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '16px',
+            background: 'var(--surface-2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px',
+            color: 'var(--accent)'
+          }}>
+            <ChefHat size={36} />
+          </div>
+          <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)' }}>No active tickets in kitchen queue</div>
+          <div style={{ fontSize: '12.5px', color: 'var(--text-faint)', marginTop: '6px', maxWidth: '320px' }}>
+            New orders placed at Cashier POS or scanned via Table QR codes will arrive here instantly with an audible chime.
+          </div>
         </div>
       )}
 
@@ -120,17 +169,22 @@ export default function KDS() {
             <div key={order.id} className={`ticket ${urgent ? 'urgent' : ''}`}>
               <div className="ticket-head">
                 <div>
-                  <div className="ticket-id">
-                    #{order.id.slice(0, 5).toUpperCase()}
+                  <div className="ticket-id" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>#{order.id.slice(0, 5).toUpperCase()}</span>
                     {order.created_by === 'guest_self_order' && (
-                      <span className="guest-pill">QR Guest</span>
+                      <span className="guest-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <Smartphone size={10} /> QR Guest
+                      </span>
                     )}
                   </div>
                   <div className="ticket-meta">
                     {order.order_type === 'dine_in' ? `Table ${table?.table_number ?? order.table_id ?? '—'}` : 'Takeaway'}
                   </div>
                 </div>
-                <div className={`ticket-timer ${urgent ? 'timer-urgent' : ''}`}>{text}</div>
+                <div className={`ticket-timer ${urgent ? 'timer-urgent' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {urgent ? <Flame size={13} /> : <Clock size={12} />}
+                  <span>{text}</span>
+                </div>
               </div>
 
               <div className="ticket-body">
@@ -139,12 +193,18 @@ export default function KDS() {
                     <span className="qty">{line.quantity}×</span>
                     <span className="line-name">{line.item_name}</span>
                     {line.status === 'served' ? (
-                      <span className="status-pill served">Served</span>
+                      <span className="status-pill served" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <Check size={11} /> Served
+                      </span>
                     ) : (
                       <button
                         className={`ticket-action ${line.status === 'placed' ? 'prep' : line.status === 'in_prep' ? 'ready' : 'served'}`}
-                        style={{ flex: 'none', padding: '4px 10px', fontSize: '10.5px' }}
-                        onClick={() => setItemStatus(order.id, line.id, NEXT_STATUS[line.status])}
+                        style={{ flex: 'none', padding: '4px 10px', fontSize: '11px' }}
+                        onClick={() => {
+                          const next = NEXT_STATUS[line.status];
+                          setItemStatus(order.id, line.id, next);
+                          notify.success('Item Status', `${line.item_name} updated to ${next.toUpperCase()}`);
+                        }}
                       >
                         {ACTION_LABEL[line.status]}
                       </button>
@@ -159,3 +219,4 @@ export default function KDS() {
     </div>
   );
 }
+

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store';
+import { notify } from './Toast';
+import { Lock, Delete, X, ShieldCheck, UserCheck, KeyRound } from 'lucide-react';
 
 const DEMO_STAFF = [
   { name: 'Sarah Chen', role: 'manager', pin: '1234', label: 'General Manager (Full Access)' },
@@ -40,11 +42,13 @@ export default function PinModal({ isOpen, onClose }) {
     setLoading(true);
     setError('');
     try {
-      await loginWithPin(pinToSubmit);
+      const user = await loginWithPin(pinToSubmit);
       setPin('');
+      notify.success('Authenticated', `Active staff switched to ${user.name} (${user.role.toUpperCase()})`);
       onClose();
     } catch (err) {
       setError(err.message || 'Invalid PIN');
+      notify.error('Auth Failed', err.message || 'Invalid PIN provided');
     } finally {
       setLoading(false);
     }
@@ -59,11 +63,25 @@ export default function PinModal({ isOpen, onClose }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card pin-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <div>
-            <h3>Staff Authentication & Fast Switch</h3>
-            <p className="modal-sub">Enter your 4-digit security PIN or select a demo staff role</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '34px',
+              height: '34px',
+              borderRadius: '8px',
+              background: 'rgba(249, 115, 22, 0.15)',
+              color: 'var(--accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <KeyRound size={18} />
+            </div>
+            <div>
+              <h3>Staff Authentication & Fast Switch</h3>
+              <p className="modal-sub">Enter security PIN or switch role quickly</p>
+            </div>
           </div>
-          <button className="close-btn" onClick={onClose}>✕</button>
+          <button className="close-btn" onClick={onClose}><X size={18} /></button>
         </div>
 
         <div className="pin-body">
@@ -102,18 +120,18 @@ export default function PinModal({ isOpen, onClose }) {
 
           {/* Number Keypad */}
           <div className="pin-keypad">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'DEL'].map((k) => (
               <button
                 key={k}
-                className={`keypad-key ${k === 'C' ? 'clear' : k === '⌫' ? 'backspace' : 'digit'}`}
+                className={`keypad-key ${k === 'C' ? 'clear' : k === 'DEL' ? 'backspace' : 'digit'}`}
                 onClick={() => {
                   if (k === 'C') handleClear();
-                  else if (k === '⌫') handleBackspace();
+                  else if (k === 'DEL') handleBackspace();
                   else handleDigit(k);
                 }}
                 disabled={loading}
               >
-                {k}
+                {k === 'DEL' ? <Delete size={18} style={{ verticalAlign: 'middle' }} /> : k}
               </button>
             ))}
           </div>
@@ -130,3 +148,4 @@ export default function PinModal({ isOpen, onClose }) {
     </div>
   );
 }
+

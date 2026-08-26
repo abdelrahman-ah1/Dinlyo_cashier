@@ -1,5 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { notify } from '../components/Toast';
+import {
+  UtensilsCrossed,
+  Send,
+  Minus,
+  Plus,
+  ArrowLeft,
+  CheckCircle2,
+  ShoppingBag,
+  Sparkles,
+  X
+} from 'lucide-react';
 
 export default function SelfOrder({ tableNumber = '3', branchId = 'default', onBackToPos }) {
   const [menu, setMenu] = useState([]);
@@ -36,6 +48,7 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
       }
       return [...prev, { item_id: item.id, item_name: item.name, price: item.price, quantity: 1 }];
     });
+    notify.success('Item Added', `${item.name} added to your tray.`);
   };
 
   const handleUpdateQty = (itemId, delta) => {
@@ -66,9 +79,10 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
       });
       setOrderSuccess(order);
       setCart([]);
+      notify.success('Order Dispatched!', `Your order #${order.id.slice(0, 6).toUpperCase()} was received by the kitchen.`);
       setSubmitting(false);
     } catch (err) {
-      alert('Order submission failed: ' + err.message);
+      notify.error('Submission Failed', err.message || 'Could not send order');
       setSubmitting(false);
     }
   };
@@ -77,7 +91,19 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
     return (
       <div className="self-order-container">
         <div className="self-order-success-card">
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎉</div>
+          <div style={{
+            width: '72px',
+            height: '72px',
+            borderRadius: '20px',
+            background: 'rgba(16, 185, 129, 0.15)',
+            color: '#10b981',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px'
+          }}>
+            <CheckCircle2 size={42} />
+          </div>
           <h2>Order Sent to Kitchen!</h2>
           <p className="order-num-highlight">Ticket #{orderSuccess.id.slice(0, 6).toUpperCase()}</p>
           <div className="success-meta-box">
@@ -85,7 +111,7 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
             <div>Items: <strong>{orderSuccess.items?.length} items</strong></div>
             <div>Total: <strong>EGP {orderSuccess.total?.toFixed(2)}</strong></div>
           </div>
-          <p style={{ fontSize: '13px', opacity: 0.8, marginTop: '16px' }}>
+          <p style={{ fontSize: '13px', color: 'var(--text-dim)', marginTop: '16px' }}>
             Our kitchen staff has received your ticket and is preparing your order right now.
           </p>
           <div className="success-actions">
@@ -93,8 +119,9 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
               + Place Another Order
             </button>
             {onBackToPos && (
-              <button className="btn-back-pos" onClick={onBackToPos}>
-                ← Return to Cashier POS
+              <button className="btn-back-pos" onClick={onBackToPos} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                <ArrowLeft size={14} />
+                <span>Return to Cashier POS</span>
               </button>
             )}
           </div>
@@ -108,12 +135,16 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
       {/* Mobile App Header */}
       <div className="self-order-nav">
         <div>
-          <div className="brand-logo-text">DEMO RESTAURANT</div>
-          <div className="table-badge-mobile">🍽️ Table {tableNumber} • Dine-In Guest Order</div>
+          <div className="brand-logo-text">DINLYO RESTAURANT</div>
+          <div className="table-badge-mobile" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <UtensilsCrossed size={12} style={{ color: '#a855f7' }} />
+            <span>Table {tableNumber} • Dine-In Guest Order</span>
+          </div>
         </div>
         {onBackToPos && (
-          <button className="btn-exit-self-order" onClick={onBackToPos}>
-            Exit to POS
+          <button className="btn-exit-self-order" onClick={onBackToPos} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <ArrowLeft size={12} />
+            <span>Exit to POS</span>
           </button>
         )}
       </div>
@@ -148,9 +179,9 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
                 <div className="self-card-actions">
                   {inCart ? (
                     <div className="qty-picker">
-                      <button onClick={() => handleUpdateQty(item.id, -1)}>-</button>
+                      <button onClick={() => handleUpdateQty(item.id, -1)}><Minus size={12} /></button>
                       <span>{inCart.quantity}</span>
-                      <button onClick={() => handleUpdateQty(item.id, 1)}>+</button>
+                      <button onClick={() => handleUpdateQty(item.id, 1)}><Plus size={12} /></button>
                     </div>
                   ) : (
                     <button className="btn-add-item" onClick={() => handleAddToCart(item)}>
@@ -169,7 +200,7 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
         <div className="self-order-bottom-bar">
           <div className="cart-summary-col">
             <div className="cart-total-amount">EGP {cartTotal.toFixed(2)}</div>
-            <div className="cart-items-count">{cart.reduce((s, i) => s + i.quantity, 0)} items in cart</div>
+            <div className="cart-items-count">{cart.reduce((s, i) => s + i.quantity, 0)} items in tray</div>
           </div>
           <div className="cart-actions-col">
             <input
@@ -180,7 +211,13 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
               onChange={(e) => setGuestName(e.target.value)}
             />
             <button className="btn-submit-order" onClick={handleSubmitOrder} disabled={submitting}>
-              {submitting ? 'Sending...' : '⚡ Send to Kitchen'}
+              {submitting ? (
+                <span>Sending...</span>
+              ) : (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <Send size={13} /> Send to Kitchen
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -188,3 +225,4 @@ export default function SelfOrder({ tableNumber = '3', branchId = 'default', onB
     </div>
   );
 }
+

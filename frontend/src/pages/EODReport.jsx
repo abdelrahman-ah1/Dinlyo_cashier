@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
+import { notify } from '../components/Toast';
+import {
+  BarChart3,
+  Printer,
+  Lock,
+  Banknote,
+  CreditCard,
+  Calendar,
+  UtensilsCrossed,
+  TrendingDown
+} from 'lucide-react';
 
 export default function EODReport() {
   const { eodReport, eodLoading, fetchEODReport, currentUser } = useStore();
@@ -10,7 +21,8 @@ export default function EODReport() {
   }, [selectedDate]);
 
   const handlePrint = () => {
-    window.print();
+    notify.info('Print Dispatched', 'Generating printable reconciliation summary...');
+    setTimeout(() => window.print(), 300);
   };
 
   const isManager = currentUser?.role === 'manager';
@@ -18,7 +30,19 @@ export default function EODReport() {
   if (!isManager) {
     return (
       <div className="audit-denied-card">
-        <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔒</div>
+        <div style={{
+          width: '64px',
+          height: '64px',
+          borderRadius: '16px',
+          background: 'rgba(239, 68, 68, 0.15)',
+          color: '#ef4444',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '0 auto 16px'
+        }}>
+          <Lock size={32} />
+        </div>
         <h3>Access Restricted</h3>
         <p>End-of-Day Reconciliation Reports are restricted to General Managers.</p>
       </div>
@@ -33,19 +57,37 @@ export default function EODReport() {
   return (
     <div className="eod-page">
       <div className="eod-header no-print">
-        <div>
-          <h2>📊 End-of-Day (EOD) Reconciliation Report</h2>
-          <p className="eod-subtitle">Financial audit, payment method breakdown, and stock consumption (FR-6.4)</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            background: 'rgba(59, 130, 246, 0.15)',
+            color: '#3b82f6',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <BarChart3 size={24} />
+          </div>
+          <div>
+            <h2>End-of-Day (EOD) Reconciliation Report</h2>
+            <p className="eod-subtitle">Financial audit, payment method breakdown, and stock consumption (FR-6.4)</p>
+          </div>
         </div>
-        <div className="eod-actions">
-          <input
-            type="date"
-            className="input-date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          />
-          <button className="btn-print" onClick={handlePrint}>
-            🖨️ Print / Save PDF
+        <div className="eod-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Calendar size={15} style={{ color: 'var(--text-faint)' }} />
+            <input
+              type="date"
+              className="input-date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+          </div>
+          <button className="btn-print" onClick={handlePrint} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <Printer size={14} />
+            <span>Print / Save PDF</span>
           </button>
         </div>
       </div>
@@ -55,8 +97,8 @@ export default function EODReport() {
       ) : (
         <div className="eod-content printable-area">
           <div className="eod-paper-header">
-            <div className="brand-title">DEMO RESTAURANT GROUP</div>
-            <div className="branch-sub">Downtown Branch • Daily Operations X/Z Report</div>
+            <div className="brand-title">DINLYO RESTAURANT GROUP</div>
+            <div className="branch-sub">Downtown Branch • Daily Operations X/Z Reconciliation Report</div>
             <div className="date-badge">Report Date: {selectedDate} | Generated: {new Date().toLocaleTimeString()}</div>
           </div>
 
@@ -87,7 +129,10 @@ export default function EODReport() {
           {/* Payment Method Split & Order Flow Breakdown */}
           <div className="eod-two-col">
             <div className="eod-section-card">
-              <h3>💳 Tender Reconciliation</h3>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={16} style={{ color: 'var(--accent)' }} />
+                <span>Tender Reconciliation</span>
+              </h3>
               <table className="eod-table">
                 <thead>
                   <tr>
@@ -98,12 +143,20 @@ export default function EODReport() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td>💵 Cash in Drawer</td>
+                    <td>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <Banknote size={14} style={{ color: '#10b981' }} /> Cash in Drawer
+                      </span>
+                    </td>
                     <td>{pay.cashTxCount || 0}</td>
                     <td className="font-bold">EGP {(pay.cashTotal || 0).toFixed(2)}</td>
                   </tr>
                   <tr>
-                    <td>💳 Card / Terminal</td>
+                    <td>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <CreditCard size={14} style={{ color: '#3b82f6' }} /> Card / Terminal
+                      </span>
+                    </td>
                     <td>{pay.cardTxCount || 0}</td>
                     <td className="font-bold">EGP {(pay.cardTotal || 0).toFixed(2)}</td>
                   </tr>
@@ -117,7 +170,10 @@ export default function EODReport() {
             </div>
 
             <div className="eod-section-card">
-              <h3>🍽️ Order Operations Breakdown</h3>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UtensilsCrossed size={16} style={{ color: '#3b82f6' }} />
+                <span>Order Operations Breakdown</span>
+              </h3>
               <div className="metrics-list">
                 <div className="metric-row">
                   <span>Dine-In Orders:</span>
@@ -149,9 +205,12 @@ export default function EODReport() {
 
           {/* Theoretical Ingredient Consumption */}
           <div className="eod-section-card" style={{ marginTop: '20px' }}>
-            <h3>📉 Theoretical Inventory Consumption (Recipes Depleted)</h3>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendingDown size={16} style={{ color: '#f87171' }} />
+              <span>Theoretical Inventory Consumption (Recipes Depleted)</span>
+            </h3>
             {depletions.length === 0 ? (
-              <p className="text-muted" style={{ padding: '12px 0' }}>No recipes depleted for the selected date.</p>
+              <p className="text-muted" style={{ padding: '12px 0', color: 'var(--text-faint)' }}>No recipes depleted for the selected date.</p>
             ) : (
               <table className="eod-table">
                 <thead>
@@ -191,3 +250,4 @@ export default function EODReport() {
     </div>
   );
 }
+

@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
+import { notify } from '../components/Toast';
+import {
+  ShieldAlert,
+  Lock,
+  Search,
+  RefreshCw,
+  Activity,
+  AlertTriangle,
+  FileText
+} from 'lucide-react';
 
 export default function AuditLog() {
   const { currentUser, auditLogs, auditLogLoading, auditLogError, auditLogScope, fetchAuditLogs } = useStore();
@@ -14,7 +24,19 @@ export default function AuditLog() {
   if (currentUser.role === 'cashier') {
     return (
       <div className="audit-restricted-card">
-        <div className="restricted-icon">🔒</div>
+        <div style={{
+          width: '64px',
+          height: '64px',
+          borderRadius: '16px',
+          background: 'rgba(239, 68, 68, 0.15)',
+          color: '#ef4444',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '0 auto 16px'
+        }}>
+          <Lock size={32} />
+        </div>
         <h2>Access Restricted (403 Forbidden)</h2>
         <p>Cashier operators do not have permission to inspect system audit logs.</p>
         <div className="restricted-badge">Required Scope: Shift Manager or General Manager</div>
@@ -37,15 +59,29 @@ export default function AuditLog() {
   return (
     <div className="audit-page">
       <div className="audit-header-bar">
-        <div>
-          <h2>System Audit Trail</h2>
-          <div className="audit-scope-info">
-            <span className={`role-badge ${currentUser.role}`}>{currentUser.role.replace('_', ' ').toUpperCase()}</span>
-            <span>
-              {isShiftManager
-                ? "Today's Shift Scope (Current Day Activity Only)"
-                : 'Full System Audit Access (All Historical Events)'}
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            background: 'rgba(168, 85, 247, 0.15)',
+            color: '#a855f7',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <ShieldAlert size={24} />
+          </div>
+          <div>
+            <h2>System Audit Trail</h2>
+            <div className="audit-scope-info">
+              <span className={`role-badge ${currentUser.role}`}>{currentUser.role.replace('_', ' ').toUpperCase()}</span>
+              <span>
+                {isShiftManager
+                  ? "Today's Shift Scope (Current Day Activity Only)"
+                  : 'Full System Audit Access (All Historical Events)'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -67,8 +103,17 @@ export default function AuditLog() {
             </div>
           )}
 
-          <button className="refresh-btn" onClick={() => fetchAuditLogs(auditLogScope)} disabled={auditLogLoading}>
-            {auditLogLoading ? 'Refreshing…' : '🔄 Refresh Logs'}
+          <button
+            className="refresh-btn"
+            onClick={() => {
+              fetchAuditLogs(auditLogScope);
+              notify.info('Audit Log', 'Audit records updated');
+            }}
+            disabled={auditLogLoading}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <RefreshCw size={13} className={auditLogLoading ? 'animate-spin' : ''} />
+            <span>{auditLogLoading ? 'Refreshing…' : 'Refresh Logs'}</span>
           </button>
         </div>
       </div>
@@ -95,7 +140,8 @@ export default function AuditLog() {
 
       {/* Filter Bar */}
       <div className="audit-filter-bar">
-        <div className="filter-input-box">
+        <div className="filter-input-box" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Search size={14} style={{ color: 'var(--text-faint)' }} />
           <input
             type="text"
             placeholder="Search by staff actor name…"
@@ -118,7 +164,12 @@ export default function AuditLog() {
       </div>
 
       {/* Error display */}
-      {auditLogError && <div className="audit-error-banner">⚠️ {auditLogError}</div>}
+      {auditLogError && (
+        <div className="audit-error-banner" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <AlertTriangle size={15} style={{ color: '#ef4444' }} />
+          <span>{auditLogError}</span>
+        </div>
+      )}
 
       {/* Logs Table */}
       <div className="audit-table-container">
@@ -183,3 +234,4 @@ export default function AuditLog() {
     </div>
   );
 }
+

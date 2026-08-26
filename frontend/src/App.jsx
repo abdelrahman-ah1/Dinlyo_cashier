@@ -9,6 +9,23 @@ import SelfOrder from './pages/SelfOrder';
 import PinModal from './components/PinModal';
 import HardwareModal from './components/HardwareModal';
 import QRModal from './components/QRModal';
+import ToastContainer, { notify } from './components/Toast';
+import {
+  Printer,
+  User,
+  RefreshCw,
+  UtensilsCrossed,
+  ChefHat,
+  Boxes,
+  BarChart3,
+  ShieldAlert,
+  Smartphone,
+  X,
+  Zap,
+  ArrowRightLeft,
+  Wifi,
+  WifiOff
+} from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('pos'); // 'pos' | 'kds' | 'inventory' | 'eod' | 'audit' | 'guest_order'
@@ -48,10 +65,10 @@ export default function App() {
     <div className="app-shell">
       <div className="topbar">
         <div className="brand">
-          <span className="brand-mark">P</span>
+          <span className="brand-mark">D</span>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '13px', lineHeight: 1.1 }}>Downtown Branch</div>
-            <div style={{ fontSize: '10px', opacity: 0.65 }}>POS + KDS Engine (SRS v1.0)</div>
+            <div style={{ fontWeight: 700, fontSize: '13.5px', lineHeight: 1.2 }}>Downtown Branch</div>
+            <div style={{ fontSize: '10.5px', color: 'var(--text-faint)' }}>Dinlyo POS & KDS Engine</div>
           </div>
         </div>
 
@@ -61,13 +78,15 @@ export default function App() {
             className={`nav-tab ${activeTab === 'pos' ? 'active' : ''}`}
             onClick={() => setActiveTab('pos')}
           >
-            Cashier (POS)
+            <UtensilsCrossed size={15} />
+            <span>Cashier (POS)</span>
           </button>
           <button
             className={`nav-tab ${activeTab === 'kds' ? 'active' : ''}`}
             onClick={() => setActiveTab('kds')}
           >
-            Kitchen (KDS)
+            <ChefHat size={15} />
+            <span>Kitchen (KDS)</span>
           </button>
 
           {!isCashier && (
@@ -75,7 +94,8 @@ export default function App() {
               className={`nav-tab ${activeTab === 'inventory' ? 'active' : ''}`}
               onClick={() => setActiveTab('inventory')}
             >
-              Inventory & Recipes
+              <Boxes size={15} />
+              <span>Inventory</span>
               {lowStockAlerts.length > 0 && (
                 <span className="tab-warning-dot">!</span>
               )}
@@ -87,7 +107,8 @@ export default function App() {
               className={`nav-tab ${activeTab === 'eod' ? 'active' : ''}`}
               onClick={() => setActiveTab('eod')}
             >
-              EOD Report
+              <BarChart3 size={15} />
+              <span>EOD Report</span>
             </button>
           )}
 
@@ -96,7 +117,8 @@ export default function App() {
               className={`nav-tab ${activeTab === 'audit' ? 'active' : ''}`}
               onClick={() => setActiveTab('audit')}
             >
-              {isShiftManager ? "Today's Audit" : 'Full Audit Log'}
+              <ShieldAlert size={15} />
+              <span>{isShiftManager ? "Today's Audit" : 'Audit Trail'}</span>
             </button>
           )}
 
@@ -105,7 +127,8 @@ export default function App() {
             onClick={() => handleOpenGuestApp('3')}
             title="Preview customer mobile self-ordering interface (FR-6.5)"
           >
-            📱 QR Self-Order
+            <Smartphone size={15} />
+            <span>QR Self-Order</span>
           </button>
         </div>
 
@@ -116,20 +139,20 @@ export default function App() {
             onClick={() => setShowHwModal(true)}
             title="Open ESC/POS Thermal Spooler & Hardware Bridge (Port 9100)"
           >
-            <span style={{ fontSize: '14px' }}>🖨️</span>
+            <Printer size={15} />
             <span>Hardware</span>
           </button>
 
           {/* Active Staff User Badge & Switch Button */}
           <button className="user-badge" onClick={() => setShowPinModal(true)} title="Click to switch staff role / enter PIN">
-            <span className="user-avatar">👤</span>
+            <span className="user-avatar"><User size={15} /></span>
             <div className="user-details">
               <span className="user-name">{currentUser?.name || 'Staff User'}</span>
               <span className={`user-role-tag ${currentUser?.role}`}>
                 {currentUser?.role?.replace('_', ' ').toUpperCase()}
               </span>
             </div>
-            <span className="switch-icon">⇄</span>
+            <ArrowRightLeft size={13} className="switch-icon" />
           </button>
 
           {/* Cloud Sync & Outbox Status Widget */}
@@ -137,25 +160,25 @@ export default function App() {
             className={`sync-badge ${!wanOnline ? 'wan-offline' : pendingCount > 0 ? 'wan-pending' : 'wan-online'} ${!isManager ? 'read-only' : ''}`}
             onClick={() => {
               if (isManager) setShowSyncModal(true);
-              else alert(`Cloud sync management is restricted to General Managers. Current active role: ${currentUser?.role}`);
+              else notify.warning('Manager Access Required', `Cloud sync management is restricted to General Managers. Current role: ${currentUser?.role}`);
             }}
             title={isManager ? 'Click to manage Cloud Sync & Outbox Queue' : 'Cloud Sync (Manager Restricted)'}
           >
             <span className={`sync-dot ${!wanOnline ? 'offline' : isSyncing ? 'syncing' : 'online'}`} />
             <div className="sync-text">
               <span className="sync-title">
-                {!wanOnline ? 'WAN Offline' : isSyncing ? 'Syncing…' : 'Cloud Connected'}
+                {!wanOnline ? 'WAN Offline' : isSyncing ? 'Syncing…' : 'Cloud Sync'}
               </span>
               <span className="sync-sub">
-                {pendingCount > 0 ? `${pendingCount} in outbox` : `${syncedCount} synced`}
+                {pendingCount > 0 ? `${pendingCount} pending` : `${syncedCount} synced`}
               </span>
             </div>
           </button>
 
           {/* Local LAN Edge Server Connection Indicator */}
-          <div className="conn-status">
+          <div className="conn-status" title={wsConnected ? 'Connected to local Edge Server via WebSocket' : 'Reconnecting to Edge Server...'}>
             <span className={`conn-dot ${wsConnected ? 'online' : ''}`} />
-            {wsConnected ? 'Edge server (LAN)' : 'Reconnecting…'}
+            {wsConnected ? 'LAN Online' : 'Reconnecting…'}
           </div>
         </div>
       </div>
@@ -204,17 +227,25 @@ export default function App() {
                 <h3>Offline Outbox & Cloud Sync Engine</h3>
                 <p className="modal-sub">Phase 2 Cloud Reconciliation & WAN Resilience (Manager Access)</p>
               </div>
-              <button className="close-btn" onClick={() => setShowSyncModal(false)}>✕</button>
+              <button className="close-btn" onClick={() => setShowSyncModal(false)}><X size={18} /></button>
             </div>
 
             <div className="sync-controls">
               <div className="wan-switch-box">
-                <span className="control-label">WAN Link Simulation:</span>
+                <span className="control-label">WAN Link Status:</span>
                 <button
                   className={`toggle-btn ${wanOnline ? 'active-online' : 'active-offline'}`}
                   onClick={() => toggleWan(!wanOnline)}
                 >
-                  {wanOnline ? '🟢 WAN Online (Connected)' : '🔴 WAN Outage (Simulated Offline)'}
+                  {wanOnline ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Wifi size={14} /> WAN Online
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <WifiOff size={14} /> WAN Outage (Simulated)
+                    </span>
+                  )}
                 </button>
               </div>
 
@@ -223,7 +254,15 @@ export default function App() {
                 disabled={!wanOnline || isSyncing || pendingCount === 0}
                 onClick={() => triggerReplay()}
               >
-                {isSyncing ? 'Replaying Queue…' : '⚡ Trigger Replay Now'}
+                {isSyncing ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <RefreshCw size={14} className="animate-spin" /> Replaying…
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <Zap size={14} /> Trigger Replay
+                  </span>
+                )}
               </button>
             </div>
 
@@ -273,6 +312,10 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Global Toast Notification Container */}
+      <ToastContainer />
     </div>
   );
 }
+

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
+import { notify } from './Toast';
+import { Printer, Receipt, ChefHat, Zap, X, Cpu, FileText } from 'lucide-react';
 
 export default function HardwareModal({ isOpen, onClose }) {
   const { hardwareJobs, drawerKickCount, fetchHardwareStatus, kickDrawer, printTestReceipt } = useStore();
@@ -16,14 +18,26 @@ export default function HardwareModal({ isOpen, onClose }) {
 
   const handleKick = async () => {
     setActing(true);
-    await kickDrawer();
-    setActing(false);
+    try {
+      await kickDrawer();
+      notify.success('Drawer Kick Dispatched', 'ESC/POS Solenoid pulse sent to TCP port 9100');
+    } catch (e) {
+      notify.error('Kick Failed', e.message);
+    } finally {
+      setActing(false);
+    }
   };
 
   const handlePrintTest = async (type) => {
     setActing(true);
-    await printTestReceipt(type);
-    setActing(false);
+    try {
+      await printTestReceipt(type);
+      notify.success('Test Spooled', `Dispatched test ${type} to thermal ESC/POS spooler`);
+    } catch (e) {
+      notify.error('Print Test Failed', e.message);
+    } finally {
+      setActing(false);
+    }
   };
 
   const activeJob = selectedJob || hardwareJobs[0];
@@ -32,14 +46,25 @@ export default function HardwareModal({ isOpen, onClose }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card hardware-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <div className="flex items-center gap-2">
-            <span style={{ fontSize: '20px' }}>🖨️</span>
+          <div className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              background: 'rgba(59, 130, 246, 0.15)',
+              color: '#3b82f6',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Printer size={20} />
+            </div>
             <div>
               <h3>Hardware Bridge & ESC/POS Thermal Spooler</h3>
-              <p style={{ fontSize: '11px', opacity: 0.7 }}>TCP Port 9100 Raw Socket Bridge & Solenoid Kick (FR-5.1 – FR-5.5)</p>
+              <p style={{ fontSize: '11px', color: 'var(--text-dim)', margin: 0 }}>TCP Port 9100 Raw Socket Bridge & Solenoid Kick (FR-5.1 – FR-5.5)</p>
             </div>
           </div>
-          <button className="btn-close" onClick={onClose}>×</button>
+          <button className="btn-close" onClick={onClose}><X size={18} /></button>
         </div>
 
         {/* Hardware Status & Quick Controls */}
@@ -58,13 +83,19 @@ export default function HardwareModal({ isOpen, onClose }) {
 
         <div className="hardware-actions-bar">
           <button className="btn-hw-action" onClick={() => handlePrintTest('RECEIPT')} disabled={acting}>
-            🧾 Spool Test Receipt
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Receipt size={14} /> Spool Test Receipt
+            </span>
           </button>
           <button className="btn-hw-action" onClick={() => handlePrintTest('KITCHEN')} disabled={acting}>
-            👨‍🍳 Spool Kitchen Ticket
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <ChefHat size={14} /> Spool Kitchen Ticket
+            </span>
           </button>
           <button className="btn-hw-action drawer-btn" onClick={handleKick} disabled={acting}>
-            ⚡ Kick Cash Drawer (Pulse)
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Zap size={14} /> Kick Cash Drawer (Pulse)
+            </span>
           </button>
         </div>
 
@@ -108,7 +139,7 @@ export default function HardwareModal({ isOpen, onClose }) {
             ) : activeJob?.type === 'DRAWER_KICK' ? (
               <div className="thermal-receipt-paper drawer-paper">
                 <div style={{ textAlign: 'center', padding: '30px 10px' }}>
-                  <div style={{ fontSize: '36px', marginBottom: '8px' }}>⚡</div>
+                  <div style={{ color: '#f59e0b', marginBottom: '8px' }}><Zap size={40} /></div>
                   <div style={{ fontWeight: 'bold', fontSize: '14px' }}>CASH DRAWER SOLENOID PULSE TRIGGERED</div>
                   <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>Command: <code>ESC p 0 25 250</code> sent to port 9100</div>
                   <div style={{ fontSize: '12px', marginTop: '12px' }}>Event Source: <strong>{activeJob.source}</strong></div>
@@ -124,3 +155,4 @@ export default function HardwareModal({ isOpen, onClose }) {
     </div>
   );
 }
+
