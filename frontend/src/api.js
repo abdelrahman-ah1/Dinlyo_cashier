@@ -43,9 +43,20 @@ export const api = {
   getUsers: (branchId) => request(`/api/auth/users?branch_id=${branchId}`),
 
   // Core POS & KDS
-  getBranch: () => request('/api/branch'),
-  getMenu: (branchId) => request(`/api/menu?branch_id=${branchId}`),
+  getBranch: (branchId) => request(`/api/branch${branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''}`),
+  getBranches: () => request('/api/branches'),
+  createBranch: (payload) => request('/api/branches', { method: 'POST', body: JSON.stringify(payload) }),
+  updateBranch: (id, payload) => request(`/api/branches/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteBranch: (id) => request(`/api/branches/${id}`, { method: 'DELETE' }),
+  getMenu: (branchId, includeUnavailable = false) =>
+    request(`/api/menu?branch_id=${branchId}${includeUnavailable ? '&include_unavailable=1' : ''}`),
+  createMenuItem: (payload) => request('/api/menu', { method: 'POST', body: JSON.stringify(payload) }),
+  updateMenuItem: (id, payload) => request(`/api/menu/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteMenuItem: (id) => request(`/api/menu/${id}`, { method: 'DELETE' }),
   getTables: (branchId) => request(`/api/tables?branch_id=${branchId}`),
+  createTable: (payload) => request('/api/tables', { method: 'POST', body: JSON.stringify(payload) }),
+  updateTable: (id, payload) => request(`/api/tables/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteTable: (id) => request(`/api/tables/${id}`, { method: 'DELETE' }),
   getOrders: (branchId, status) => request(`/api/orders?branch_id=${branchId}${status ? `&status=${status}` : ''}`),
   createOrder: (payload) => request('/api/orders', { method: 'POST', body: JSON.stringify(payload) }),
   updateItemStatus: (orderId, itemId, status) =>
@@ -65,7 +76,8 @@ export const api = {
   getInventory: (branchId) => request(`/api/inventory?branch_id=${branchId}`),
   updateStock: (id, stock_qty) => request(`/api/inventory/${id}`, { method: 'PATCH', body: JSON.stringify({ stock_qty }) }),
   getRecipes: (branchId) => request(`/api/recipes?branch_id=${branchId}`),
-  getEODReport: (branchId, date) => request(`/api/reports/eod?branch_id=${branchId}${date ? `&date=${date}` : ''}`),
+  getEODReport: (branchId, date, scope = 'all') =>
+    request(`/api/reports/eod?scope=${scope}${branchId ? `&branch_id=${branchId}` : ''}${date ? `&date=${date}` : ''}`),
 
   // Public QR Guest Self-Order (FR-6.5)
   getPublicMenu: (branchId) => request(`/api/public/menu?branch_id=${branchId}`),

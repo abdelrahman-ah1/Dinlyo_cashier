@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { notify } from './Toast';
-import { Printer, Receipt, ChefHat, Zap, X, Cpu, FileText } from 'lucide-react';
+import ThermalCashReceipt from './ThermalCashReceipt';
+import { Printer, Receipt, ChefHat, Zap, X } from 'lucide-react';
 
 export default function HardwareModal({ isOpen, onClose }) {
   const { hardwareJobs, drawerKickCount, fetchHardwareStatus, kickDrawer, printTestReceipt } = useStore();
@@ -132,7 +133,9 @@ export default function HardwareModal({ isOpen, onClose }) {
 
           <div className="spooler-preview-col">
             <div className="spooler-col-title">Thermal Printer Monospace Output</div>
-            {activeJob && activeJob.type !== 'DRAWER_KICK' ? (
+            {activeJob && activeJob.type === 'CUSTOMER_RECEIPT' ? (
+              <ThermalCashReceipt layout={activeJob.layout} previewText={activeJob.previewText} />
+            ) : activeJob && activeJob.type !== 'DRAWER_KICK' ? (
               <div className="thermal-receipt-paper">
                 <pre className="escpos-preview">{activeJob.previewText || 'No preview text available'}</pre>
               </div>

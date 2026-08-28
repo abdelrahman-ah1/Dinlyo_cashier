@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { notify } from '../components/Toast';
+import ThermalCashReceipt from '../components/ThermalCashReceipt';
+import { buildReceiptLayout } from '../receipt';
 import {
   ShoppingBag,
   UtensilsCrossed,
@@ -16,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export default function POS({ onOpenQrModal }) {
-  const { menu, tables, orders, placeOrder, payOrder } = useStore();
+  const { menu, tables, orders, placeOrder, payOrder, shopProfile } = useStore();
   const [selectedTable, setSelectedTable] = useState(null);
   const [orderType, setOrderType] = useState('dine_in');
   const [activeCategory, setActiveCategory] = useState('All');
@@ -25,6 +27,8 @@ export default function POS({ onOpenQrModal }) {
   const [justSent, setJustSent] = useState(false);
   const [paymentModalOrder, setPaymentModalOrder] = useState(null);
   const [processingPay, setProcessingPay] = useState(false);
+  const [payMethod, setPayMethod] = useState('cash');
+  const [cashInput, setCashInput] = useState('');
 
   const categories = useMemo(() => ['All', ...new Set(menu.map((m) => m.category))], [menu]);
   const visibleItems = useMemo(
@@ -75,11 +79,59 @@ export default function POS({ onOpenQrModal }) {
     }
   };
 
+  useEffect(() => {
+    setCashInput('');
+    setPayMethod('cash');
+  }, [paymentModalOrder?.id]);
+
+  const paymentTable = paymentModalOrder
+    ? tables.find((t) => t.id === paymentModalOrder.table_id)
+    : null;
+  const dueAmount = Number(paymentModalOrder?.total) || 0;
+  const cashTendered = cashInput === '' ? dueAmount : Number(cashInput);
+  const liveChange = Math.max(0, (Number.isFinite(cashTendered) ? cashTendered : 0) - dueAmount);
+  const cashShort = payMethod === 'cash' && Number.isFinite(cashTendered) && cashTendered < dueAmount;
+  const cashSuggestions = useMemo(() => {
+    const due = dueAmount;
+    const rounded = Math.ceil(due / 50) * 50;
+    return [...new Set([due, rounded, 100, 200, 500].filter((n) => n >= due))].slice(0, 4);
+  }, [dueAmount]);
+
+  const liveReceiptLayout = useMemo(() => {
+    if (!paymentModalOrder) return null;
+    return buildReceiptLayout({
+      shop: shopProfile || {},
+      order: {
+        ...paymentModalOrder,
+        table_number: paymentTable?.table_number,
+      },
+      payment: {
+        method: payMethod,
+        cash_tendered: payMethod === 'cash' ? (Number.isFinite(cashTendered) ? cashTendered : dueAmount) : null,
+        card_last4: payMethod === 'card' ? String(paymentModalOrder.id || '').replace(/[^0-9a-z]/gi, '').slice(-4).toUpperCase() : null,
+        approval_code: payMethod === 'card' ? `#${String(paymentModalOrder.id || '').slice(0, 6).toUpperCase()}` : null,
+      },
+    });
+  }, [paymentModalOrder, paymentTable, shopProfile, payMethod, cashTendered, dueAmount]);
+
   const handleProcessPayment = async (method) => {
     if (!paymentModalOrder || processingPay) return;
+    if (method === 'cash') {
+      const tendered = cashInput === '' ? dueAmount : Number(cashInput);
+      if (!Number.isFinite(tendered) || tendered < dueAmount) {
+        notify.error('Insufficient Cash', 'Cash tendered must cover the amount due.');
+        return;
+      }
+    }
     setProcessingPay(true);
     try {
-      await payOrder(paymentModalOrder.id, paymentModalOrder.total, method);
+      const extras = method === 'cash'
+        ? { cash_tendered: cashInput === '' ? dueAmount : Number(cashInput) }
+        : {
+            card_last4: String(paymentModalOrder.id || '').replace(/[^0-9a-z]/gi, '').slice(-4).toUpperCase(),
+            approval_code: `#${String(paymentModalOrder.id || '').slice(0, 6).toUpperCase()}`,
+          };
+      await payOrder(paymentModalOrder.id, paymentModalOrder.total, method, extras);
       notify.success(
         'Payment Settled',
         `Order #${paymentModalOrder.id.slice(0, 6).toUpperCase()} cleared via ${method.toUpperCase()}. Receipt spooled.`
@@ -279,33 +331,75 @@ export default function POS({ onOpenQrModal }) {
               </div>
               <button className="btn-close" onClick={() => setPaymentModalOrder(null)}><X size={18} /></button>
             </div>
-            <div className="modal-body" style={{ padding: '20px' }}>
-              <div className="pay-amount-display">
-                <span className="label">Total Amount Due:</span>
-                <span className="value">EGP {paymentModalOrder.total?.toFixed(2)}</span>
+            <div className="modal-body payment-settle-body">
+              <div className="payment-settle-controls">
+                <div className="pay-amount-display">
+                  <span className="label">Total Amount Due:</span>
+                  <span className="value">EGP {dueAmount.toFixed(1)}</span>
+                </div>
+
+                <div className="pay-method-toggle">
+                  <button
+                    className={`pay-method-chip ${payMethod === 'cash' ? 'active' : ''}`}
+                    onClick={() => setPayMethod('cash')}
+                    type="button"
+                  >
+                    <Banknote size={14} /> Cash
+                  </button>
+                  <button
+                    className={`pay-method-chip ${payMethod === 'card' ? 'active' : ''}`}
+                    onClick={() => setPayMethod('card')}
+                    type="button"
+                  >
+                    <CreditCard size={14} /> Card
+                  </button>
+                </div>
+
+                {payMethod === 'cash' && (
+                  <div className="cash-tender-box">
+                    <label htmlFor="cash-tendered">Cash tendered</label>
+                    <input
+                      id="cash-tendered"
+                      type="number"
+                      min={dueAmount}
+                      step="0.5"
+                      placeholder={dueAmount.toFixed(1)}
+                      value={cashInput}
+                      onChange={(e) => setCashInput(e.target.value)}
+                    />
+                    <div className="cash-quick-btns">
+                      {cashSuggestions.map((amt) => (
+                        <button type="button" key={amt} onClick={() => setCashInput(String(amt))}>
+                          {amt === dueAmount ? 'Exact' : amt}
+                        </button>
+                      ))}
+                    </div>
+                    <div className={`cash-change ${cashShort ? 'short' : ''}`}>
+                      {cashShort
+                        ? `Short by EGP ${(dueAmount - cashTendered).toFixed(1)}`
+                        : `Change: EGP ${liveChange.toFixed(1)}`}
+                    </div>
+                  </div>
+                )}
+
+                <p className="pay-hint">
+                  Confirming payment prints a live receipt from this order and {payMethod === 'cash' ? 'kicks the cash drawer.' : 'records the card approval.'}
+                </p>
+                <div className="tender-btn-grid">
+                  <button
+                    className="btn-tender cash"
+                    disabled={processingPay || (payMethod === 'cash' && cashShort)}
+                    onClick={() => handleProcessPayment(payMethod)}
+                  >
+                    {payMethod === 'cash' ? <Banknote size={28} /> : <CreditCard size={28} />}
+                    <span>{payMethod === 'cash' ? 'Confirm Cash & Print' : 'Confirm Card & Print'}</span>
+                    <small>{processingPay ? 'Printing…' : 'Receipt updates from this order'}</small>
+                  </button>
+                </div>
               </div>
-              <p style={{ fontSize: '12px', color: 'var(--text-dim)', textAlign: 'center', marginBottom: '20px' }}>
-                Selecting Cash automatically triggers the cash drawer kick solenoid (FR-5.3) and dispatches an itemized thermal receipt (FR-5.2).
-              </p>
-              <div className="tender-btn-grid">
-                <button
-                  className="btn-tender cash"
-                  disabled={processingPay}
-                  onClick={() => handleProcessPayment('cash')}
-                >
-                  <Banknote size={32} />
-                  <span>Cash Payment</span>
-                  <small>Kicks drawer & prints receipt</small>
-                </button>
-                <button
-                  className="btn-tender card"
-                  disabled={processingPay}
-                  onClick={() => handleProcessPayment('card')}
-                >
-                  <CreditCard size={32} />
-                  <span>Card / Terminal</span>
-                  <small>Captures terminal & prints receipt</small>
-                </button>
+              <div className="payment-receipt-preview">
+                <div className="spooler-col-title">Live receipt</div>
+                <ThermalCashReceipt layout={liveReceiptLayout} compact />
               </div>
             </div>
           </div>

@@ -117,6 +117,19 @@ class InMemoryCollection {
     return { matchedCount: matches.length, modifiedCount };
   }
 
+  async deleteOne(filter) {
+    const idx = this.docs.findIndex((doc) => this._match(doc, filter));
+    if (idx === -1) return { deletedCount: 0 };
+    this.docs.splice(idx, 1);
+    return { deletedCount: 1 };
+  }
+
+  async deleteMany(filter) {
+    const before = this.docs.length;
+    this.docs = this.docs.filter((doc) => !this._match(doc, filter));
+    return { deletedCount: before - this.docs.length };
+  }
+
   _match(doc, query) {
     for (const [k, v] of Object.entries(query)) {
       if (k === '$or' && Array.isArray(v)) {
@@ -222,6 +235,9 @@ async function setupCollectionsAndSeed() {
       id: branchId,
       tenant_id: tenantId,
       name: 'Downtown Branch',
+      receipt_name: 'DINLYO',
+      address: '12 Nile Corniche, Cairo',
+      phone: '0225734410',
       currency: 'EGP',
       timezone: 'Africa/Cairo',
       created_at: new Date().toISOString(),
@@ -241,6 +257,51 @@ async function setupCollectionsAndSeed() {
       };
     });
     await tablesCol.insertMany(tables);
+
+    const extraBranches = [
+      {
+        name: 'Marina Branch',
+        receipt_name: 'DINLYO MARINA',
+        address: 'Marina Walk, North Coast',
+        phone: '0464102200',
+        zones: ['Indoor', 'Indoor', 'Indoor', 'Indoor', 'Terrace', 'Terrace', 'Terrace', 'Bar'],
+      },
+      {
+        name: 'Heliopolis Branch',
+        receipt_name: 'DINLYO HELIOPOLIS',
+        address: 'Korba Square, Heliopolis',
+        phone: '0224148800',
+        zones: ['Indoor', 'Indoor', 'Indoor', 'Indoor', 'Indoor', 'Garden', 'Garden', 'Bar', 'Bar'],
+      },
+    ];
+    for (const extra of extraBranches) {
+      const extraId = nanoid();
+      await branchesCol.insertOne({
+        _id: extraId,
+        id: extraId,
+        tenant_id: tenantId,
+        name: extra.name,
+        receipt_name: extra.receipt_name,
+        address: extra.address,
+        phone: extra.phone,
+        currency: 'EGP',
+        timezone: 'Africa/Cairo',
+        created_at: new Date().toISOString(),
+      });
+      const extraTables = extra.zones.map((zone, i) => {
+        const id = nanoid();
+        return {
+          _id: id,
+          id,
+          branch_id: extraId,
+          table_number: String(i + 1),
+          zone,
+          capacity: zone === 'Bar' ? 2 : zone === 'Garden' || zone === 'Terrace' ? 6 : 4,
+          status: 'available',
+        };
+      });
+      await tablesCol.insertMany(extraTables);
+    }
 
     const menuData = [
       ['Espresso', 'Coffee', 45],
@@ -403,10 +464,34 @@ export async function recordAuditLog({
   return logId;
 }
 
+export async function getShopProfile(branchId = DEMO_BRANCH_ID) {
+  const database = getDb();
+  const branch = await database.collection('branches').findOne({
+    $or: [{ id: branchId }, { _id: branchId }],
+  }) || await database.collection('branches').findOne({});
+  const tenant = branch
+    ? await database.collection('tenants').findOne({ $or: [{ id: branch.tenant_id }, { _id: branch.tenant_id }] })
+    : await database.collection('tenants').findOne({});
+
+  const shopName = branch?.receipt_name || tenant?.name || branch?.name || 'DINLYO';
+  const addressRaw = branch?.address || 'Downtown Branch, Cairo';
+  const phoneRaw = String(branch?.phone || '11223344');
+
+  return {
+    shopName,
+    address: /^address\b/i.test(addressRaw) ? addressRaw : `Address: ${addressRaw}`,
+    phone: /^tel/i.test(phoneRaw) ? phoneRaw : `Telp. ${phoneRaw}`,
+    currency: branch?.currency || 'EGP',
+    branchName: branch?.name || 'Downtown Branch',
+    branchId: branch?.id || branch?._id || branchId,
+  };
+}
+
 export default {
   initDb,
   getDb,
   recordOutboxEvent,
   recordAuditLog,
+  getShopProfile,
   DEMO_BRANCH_ID,
 };

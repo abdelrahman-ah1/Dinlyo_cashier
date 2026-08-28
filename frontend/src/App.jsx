@@ -3,6 +3,7 @@ import { useStore } from './store';
 import POS from './pages/POS';
 import KDS from './pages/KDS';
 import Inventory from './pages/Inventory';
+import Catalog from './pages/Catalog';
 import EODReport from './pages/EODReport';
 import AuditLog from './pages/AuditLog';
 import SelfOrder from './pages/SelfOrder';
@@ -20,6 +21,7 @@ import {
   BarChart3,
   ShieldAlert,
   Smartphone,
+  Store,
   X,
   Zap,
   ArrowRightLeft,
@@ -35,7 +37,7 @@ export default function App() {
   const [selectedQrTable, setSelectedQrTable] = useState(null);
   const [guestAppTable, setGuestAppTable] = useState('1');
 
-  const { init, wsConnected, menu, syncStatus, toggleWan, triggerReplay, currentUser, lowStockAlerts, branchId } = useStore();
+  const { init, wsConnected, menu, syncStatus, toggleWan, triggerReplay, currentUser, lowStockAlerts, branchId, shopProfile, branches, switchBranch } = useStore();
 
   useEffect(() => {
     init();
@@ -48,10 +50,10 @@ export default function App() {
 
   // Automatically adjust activeTab if role changes and current tab is restricted
   useEffect(() => {
-    if (isCashier && (activeTab === 'audit' || activeTab === 'inventory' || activeTab === 'eod')) {
+    if (isCashier && (activeTab === 'audit' || activeTab === 'inventory' || activeTab === 'eod' || activeTab === 'catalog')) {
       setActiveTab('pos');
     }
-    if (isShiftManager && activeTab === 'eod') {
+    if (isShiftManager && (activeTab === 'eod' || activeTab === 'catalog')) {
       setActiveTab('pos');
     }
   }, [currentUser?.role, activeTab, isCashier, isShiftManager]);
@@ -67,7 +69,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark">D</span>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '13.5px', lineHeight: 1.2 }}>Downtown Branch</div>
+            <div style={{ fontWeight: 700, fontSize: '13.5px', lineHeight: 1.2 }}>{shopProfile?.branchName || 'Dinlyo'}</div>
             <div style={{ fontSize: '10.5px', color: 'var(--text-faint)' }}>Dinlyo POS & KDS Engine</div>
           </div>
         </div>
@@ -104,6 +106,16 @@ export default function App() {
 
           {isManager && (
             <button
+              className={`nav-tab ${activeTab === 'catalog' ? 'active' : ''}`}
+              onClick={() => setActiveTab('catalog')}
+            >
+              <Store size={15} />
+              <span>Catalog</span>
+            </button>
+          )}
+
+          {isManager && (
+            <button
               className={`nav-tab ${activeTab === 'eod' ? 'active' : ''}`}
               onClick={() => setActiveTab('eod')}
             >
@@ -133,6 +145,18 @@ export default function App() {
         </div>
 
         <div className="topbar-right">
+          {isManager && branches.length > 0 && (
+            <select
+              className="branch-switcher"
+              value={branchId || ''}
+              onChange={(e) => switchBranch(e.target.value)}
+              title="Switch the active POS branch"
+            >
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          )}
           {/* Hardware & Spooler Monitor Trigger */}
           <button
             className="btn-hardware-topbar"
@@ -184,12 +208,16 @@ export default function App() {
       </div>
 
       <div className="page">
-        {menu.length === 0 ? null : activeTab === 'pos' ? (
+        {activeTab === 'catalog' ? (
+          <Catalog />
+        ) : menu.length === 0 ? null : activeTab === 'pos' ? (
           <POS onOpenQrModal={(table) => setSelectedQrTable(table)} />
         ) : activeTab === 'kds' ? (
           <KDS />
         ) : activeTab === 'inventory' ? (
           <Inventory />
+        ) : activeTab === 'catalog' ? (
+          <Catalog />
         ) : activeTab === 'eod' ? (
           <EODReport />
         ) : activeTab === 'audit' ? (

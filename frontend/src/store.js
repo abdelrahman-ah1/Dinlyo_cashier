@@ -11,7 +11,9 @@ const initialUser = {
 setActiveUser(initialUser);
 
 export const useStore = create((set, get) => ({
+  shopProfile: null,
   branchId: null,
+  branches: [],
   currentUser: initialUser,
   users: [],
   menu: [],
@@ -45,7 +47,10 @@ export const useStore = create((set, get) => ({
 
   async init(role = 'pos') {
     try {
-      const { branch_id } = await api.getBranch();
+      const branches = await api.getBranches().catch(() => []);
+      const preferredId = get().branchId || branches[0]?.id;
+      const shop = await api.getBranch(preferredId);
+      const branch_id = shop.branch_id;
       const [menu, tables, orders, sync, users, inv] = await Promise.all([
         api.getMenu(branch_id),
         api.getTables(branch_id),
@@ -56,6 +61,8 @@ export const useStore = create((set, get) => ({
       ]);
       set({
         branchId: branch_id,
+        shopProfile: shop,
+        branches,
         menu,
         tables,
         orders,
@@ -67,6 +74,88 @@ export const useStore = create((set, get) => ({
     } catch (err) {
       console.error('[Store] Init failed:', err);
     }
+  },
+
+  async fetchBranches() {
+    const branches = await api.getBranches();
+    set({ branches });
+    return branches;
+  },
+
+  async switchBranch(branchId) {
+    const shop = await api.getBranch(branchId);
+    const [menu, tables, orders, users, inv] = await Promise.all([
+      api.getMenu(branchId),
+      api.getTables(branchId),
+      api.getOrders(branchId, 'active'),
+      api.getUsers(branchId).catch(() => []),
+      api.getInventory(branchId).catch(() => []),
+    ]);
+    set({
+      branchId,
+      shopProfile: shop,
+      menu,
+      tables,
+      orders,
+      users,
+      inventory: inv,
+    });
+    get().connectWs(branchId, 'pos');
+  },
+
+  async saveBranch(payload, id = null) {
+    const saved = id ? await api.updateBranch(id, payload) : await api.createBranch(payload);
+    await get().fetchBranches();
+    if (get().branchId === saved.id) {
+      const shop = await api.getBranch(saved.id);
+      set({ shopProfile: shop });
+    }
+    return saved;
+  },
+
+  async removeBranch(id) {
+    await api.deleteBranch(id);
+    const branches = await get().fetchBranches();
+    if (get().branchId === id) {
+      const next = branches[0]?.id;
+      if (next) await get().switchBranch(next);
+    }
+  },
+
+  async saveTable(payload, id = null) {
+    const saved = id ? await api.updateTable(id, payload) : await api.createTable(payload);
+    const branchId = saved.branch_id || get().branchId;
+    if (branchId === get().branchId) {
+      const tables = await api.getTables(branchId);
+      set({ tables });
+    }
+    await get().fetchBranches();
+    return saved;
+  },
+
+  async removeTable(id) {
+    await api.deleteTable(id);
+    const tables = await api.getTables(get().branchId);
+    set({ tables });
+    await get().fetchBranches();
+  },
+
+  async saveMenuItem(payload, id = null) {
+    const saved = id ? await api.updateMenuItem(id, payload) : await api.createMenuItem(payload);
+    const branchId = saved.branch_id || get().branchId;
+    if (branchId === get().branchId) {
+      const menu = await api.getMenu(branchId);
+      set({ menu });
+    }
+    await get().fetchBranches();
+    return saved;
+  },
+
+  async removeMenuItem(id) {
+    await api.deleteMenuItem(id);
+    const menu = await api.getMenu(get().branchId);
+    set({ menu });
+    await get().fetchBranches();
   },
 
   connectWs(branchId, role = 'pos') {
@@ -179,11 +268,14 @@ export const useStore = create((set, get) => ({
     get().applyEvent({ order });
   },
 
-  async payOrder(orderId, amount, method = 'cash') {
+  async payOrder(orderId, amount, method = 'cash', extras = {}) {
     const payment = await api.processPayment({
       order_id: orderId,
       amount,
       method,
+      cash_tendered: extras.cash_tendered,
+      card_last4: extras.card_last4,
+      approval_code: extras.approval_code,
       idempotency_key: `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     });
     // Order is marked paid

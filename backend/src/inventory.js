@@ -164,120 +164,378 @@ export class InventoryEngine {
     }));
   }
 
-  // FR-6.4: End-of-Day (EOD) Reconciliation Report
-  async generateEODReport(branchId = DEMO_BRANCH_ID, dateStr = null) {
-    const db = getDb();
-    const targetDate = dateStr || new Date().toISOString().split('T')[0];
-
-    // Fetch all orders for the branch
-    const allOrders = await db.collection('orders')
-      .find({ branch_id: branchId })
-      .toArray();
-
-    const dayOrders = allOrders.filter(o => (o.created_at || '').startsWith(targetDate));
-
-    // Fetch all payments
-    const paymentsCol = db.collection('payments');
-    const payments = await paymentsCol.find({}).toArray();
-    const dayPayments = payments.filter(p => (p.created_at || '').startsWith(targetDate));
-
+  // FR-6.4: End-of-Day (EOD) Reconciliation Report — all tables in all branches
+  _rollupTableDay(table, orders, paymentsByOrder) {
     let grossSales = 0;
-    let dineInCount = 0;
-    let takeawayCount = 0;
-    let servedCount = 0;
+    let cashTotal = 0;
+    let cardTotal = 0;
+    let unpaidTotal = 0;
+    let itemCount = 0;
+    let covers = 0;
     let paidCount = 0;
     let openCount = 0;
     let voidCount = 0;
+    let servedCount = 0;
+    let lastOrderAt = null;
 
-    for (const order of dayOrders) {
-      grossSales += (order.total || 0);
-      if (order.order_type === 'dine_in') dineInCount++;
-      else takeawayCount++;
+    const orderRows = orders.map((order) => {
+      const pays = paymentsByOrder.get(order.id) || paymentsByOrder.get(order._id) || [];
+      const cash = pays.filter((p) => p.method === 'cash').reduce((s, p) => s + (p.amount || 0), 0);
+      const card = pays.filter((p) => p.method !== 'cash').reduce((s, p) => s + (p.amount || 0), 0);
+      const collected = cash + card;
+      const items = (order.items || []).map((it) => ({
+        name: it.item_name || it.name || 'Item',
+        qty: it.quantity || 1,
+        price: it.price || 0,
+        lineTotal: (it.price || 0) * (it.quantity || 1),
+        status: it.status || 'placed',
+      }));
+      const qty = items.reduce((s, it) => s + it.qty, 0);
+      const partySize = order.guest_count || (order.order_type === 'takeaway' || table.isTakeaway ? 1 : (table.capacity || 1));
+      const stamp = order.updated_at || order.created_at;
+
+      grossSales += order.total || 0;
+      cashTotal += cash;
+      cardTotal += card;
+      itemCount += qty;
+      covers += partySize;
+      if (stamp && (!lastOrderAt || stamp > lastOrderAt)) lastOrderAt = stamp;
 
       if (order.status === 'paid') paidCount++;
-      else if (order.status === 'served') servedCount++;
       else if (order.status === 'void') voidCount++;
+      else if (order.status === 'served') servedCount++;
       else openCount++;
-    }
 
-    let cashTotal = 0;
-    let cardTotal = 0;
-    let cashTxCount = 0;
-    let cardTxCount = 0;
-
-    for (const pay of dayPayments) {
-      if (pay.method === 'cash') {
-        cashTotal += pay.amount || 0;
-        cashTxCount++;
-      } else {
-        cardTotal += pay.amount || 0;
-        cardTxCount++;
+      if (order.status !== 'paid' && order.status !== 'void') {
+        unpaidTotal += Math.max(0, (order.total || 0) - collected);
       }
+
+      return {
+        id: order.id || order._id,
+        createdAt: order.created_at,
+        orderType: order.order_type,
+        status: order.status,
+        total: order.total || 0,
+        cash,
+        card,
+        covers: partySize,
+        itemCount: qty,
+        items,
+        paymentMethod: cash && card ? 'split' : card ? 'card' : cash ? 'cash' : (order.status === 'paid' ? 'unknown' : 'unpaid'),
+      };
+    });
+
+    const orderCount = orders.length;
+    return {
+      id: table.id || table._id,
+      tableNumber: String(table.table_number ?? '—'),
+      zone: table.zone || (table.isTakeaway ? 'Counter' : '—'),
+      capacity: table.capacity ?? null,
+      floorStatus: table.status || 'available',
+      isTakeaway: Boolean(table.isTakeaway),
+      orderCount,
+      paidCount,
+      openCount,
+      servedCount,
+      voidCount,
+      covers,
+      itemCount,
+      grossSales,
+      cashTotal,
+      cardTotal,
+      unpaidTotal,
+      avgTicket: orderCount ? grossSales / orderCount : 0,
+      lastOrderAt,
+      utilized: orderCount > 0,
+      orders: orderRows.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))),
+    };
+  }
+
+  async generateEODReport(branchId = null, dateStr = null) {
+    const db = getDb();
+    const targetDate = dateStr || new Date().toISOString().split('T')[0];
+
+    const allBranches = await db.collection('branches').find({}).toArray();
+    const scopedBranches = (branchId
+      ? allBranches.filter((b) => (b.id || b._id) === branchId)
+      : allBranches
+    ).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+    const allTables = await db.collection('tables').find({}).toArray();
+    const allOrders = await db.collection('orders').find({}).toArray();
+    const allPayments = await db.collection('payments').find({}).toArray();
+    const recipes = await db.collection('recipe_items').find({}).toArray();
+    const inventory = await db.collection('inventory_items').find({}).toArray();
+
+    const dayOrders = allOrders.filter((o) => (o.created_at || '').startsWith(targetDate));
+    const dayPayments = allPayments.filter((p) => (p.created_at || '').startsWith(targetDate));
+
+    const paymentsByOrder = new Map();
+    for (const pay of dayPayments) {
+      const key = pay.order_id;
+      if (!key) continue;
+      if (!paymentsByOrder.has(key)) paymentsByOrder.set(key, []);
+      paymentsByOrder.get(key).push(pay);
     }
 
-    // Theoretical inventory consumption
-    const recipes = await db.collection('recipe_items').find({ branch_id: branchId }).toArray();
-    const inventory = await db.collection('inventory_items').find({ branch_id: branchId }).toArray();
-    const ingMap = new Map(inventory.map(i => [i.id || String(i._id), i]));
+    const hourlyMap = new Map();
+    const itemSalesMap = new Map();
 
-    const usageMap = new Map();
-    for (const order of dayOrders) {
-      if (order.status === 'void') continue;
-      for (const item of (order.items || [])) {
-        const qty = item.quantity || 1;
-        const itemRecipes = recipes.filter(r => r.menu_item_id === item.item_id || r.menu_item_id === item.id);
-        for (const r of itemRecipes) {
-          const used = (r.qty_used || 0) * qty;
-          usageMap.set(r.inventory_item_id, (usageMap.get(r.inventory_item_id) || 0) + used);
+    const branches = [];
+    for (const branch of scopedBranches) {
+      const bid = branch.id || branch._id;
+      const tables = allTables
+        .filter((t) => t.branch_id === bid)
+        .sort((a, b) => {
+          const na = Number(a.table_number);
+          const nb = Number(b.table_number);
+          if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+          return String(a.table_number).localeCompare(String(b.table_number));
+        });
+
+      const branchOrders = dayOrders.filter((o) => o.branch_id === bid);
+      const tableReports = tables.map((table) => {
+        const tid = table.id || table._id;
+        const tOrders = branchOrders.filter((o) => o.table_id === tid);
+        return this._rollupTableDay(table, tOrders, paymentsByOrder);
+      });
+
+      const takeawayOrders = branchOrders.filter((o) => o.order_type === 'takeaway' || !o.table_id);
+      const takeawayRow = this._rollupTableDay(
+        {
+          id: `${bid}-takeaway`,
+          table_number: 'Takeaway',
+          zone: 'Counter',
+          capacity: null,
+          status: takeawayOrders.some((o) => o.status === 'open') ? 'occupied' : 'available',
+          isTakeaway: true,
+        },
+        takeawayOrders,
+        paymentsByOrder,
+      );
+
+      const roster = [...tableReports, takeawayRow];
+      const occupiedNow = tables.filter((t) => t.status === 'occupied').length;
+      const dirtyNow = tables.filter((t) => t.status === 'dirty').length;
+      const availableNow = tables.filter((t) => t.status === 'available' || !t.status).length;
+
+      let grossSales = 0;
+      let cashTotal = 0;
+      let cardTotal = 0;
+      let unpaidTotal = 0;
+      let dineInCount = 0;
+      let takeawayCount = 0;
+      let paidCount = 0;
+      let openCount = 0;
+      let servedCount = 0;
+      let voidCount = 0;
+      let covers = 0;
+      let itemCount = 0;
+
+      for (const order of branchOrders) {
+        grossSales += order.total || 0;
+        covers += order.guest_count || (order.order_type === 'takeaway' ? 1 : 0);
+        itemCount += (order.items || []).reduce((s, it) => s + (it.quantity || 1), 0);
+        if (order.order_type === 'takeaway' || !order.table_id) takeawayCount++;
+        else dineInCount++;
+        if (order.status === 'paid') paidCount++;
+        else if (order.status === 'void') voidCount++;
+        else if (order.status === 'served') servedCount++;
+        else openCount++;
+
+        const hour = (order.created_at || '').slice(11, 13) || '00';
+        const slot = hourlyMap.get(hour) || { hour, orders: 0, sales: 0 };
+        slot.orders += 1;
+        slot.sales += order.total || 0;
+        hourlyMap.set(hour, slot);
+
+        if (order.status !== 'void') {
+          for (const it of order.items || []) {
+            const name = it.item_name || it.name || 'Item';
+            const qty = it.quantity || 1;
+            const rec = itemSalesMap.get(name) || { name, qty: 0, revenue: 0 };
+            rec.qty += qty;
+            rec.revenue += (it.price || 0) * qty;
+            itemSalesMap.set(name, rec);
+          }
         }
       }
+
+      for (const row of roster) {
+        cashTotal += row.cashTotal;
+        cardTotal += row.cardTotal;
+        unpaidTotal += row.unpaidTotal;
+      }
+      if (!covers) covers = roster.reduce((s, r) => s + (r.covers || 0), 0);
+
+      const recipesForBranch = recipes.filter((r) => r.branch_id === bid);
+      const inventoryForBranch = inventory.filter((i) => i.branch_id === bid);
+      const ingMap = new Map(inventoryForBranch.map((i) => [i.id || String(i._id), i]));
+      const usageMap = new Map();
+      for (const order of branchOrders) {
+        if (order.status === 'void') continue;
+        for (const item of order.items || []) {
+          const qty = item.quantity || 1;
+          const itemRecipes = recipesForBranch.filter(
+            (r) => r.menu_item_id === item.item_id || r.menu_item_id === item.id,
+          );
+          for (const r of itemRecipes) {
+            usageMap.set(r.inventory_item_id, (usageMap.get(r.inventory_item_id) || 0) + (r.qty_used || 0) * qty);
+          }
+        }
+      }
+      const ingredientDepletions = [];
+      for (const [ingId, usedQty] of usageMap.entries()) {
+        const ing = ingMap.get(ingId);
+        if (ing) {
+          ingredientDepletions.push({
+            id: ingId,
+            name: ing.name,
+            unit: ing.unit,
+            qtyDepleted: usedQty,
+            currentStockRemaining: ing.stock_qty,
+          });
+        }
+      }
+
+      branches.push({
+        id: bid,
+        name: branch.name,
+        receiptName: branch.receipt_name || branch.name,
+        address: branch.address || '',
+        phone: branch.phone || '',
+        currency: branch.currency || 'EGP',
+        tableCount: tables.length,
+        occupiedNow,
+        dirtyNow,
+        availableNow,
+        occupancyPct: tables.length ? Math.round((occupiedNow / tables.length) * 100) : 0,
+        tablesUtilized: tableReports.filter((t) => t.utilized).length,
+        financialSummary: {
+          totalOrders: branchOrders.length,
+          grossSales,
+          netSales: grossSales - grossSales * 0.14,
+          taxAmount: grossSales * 0.14,
+          unpaidTotal,
+          currency: branch.currency || 'EGP',
+        },
+        paymentSummary: {
+          cashTotal,
+          cardTotal,
+          totalCollected: cashTotal + cardTotal,
+          cashTxCount: roster.reduce((s, r) => s + r.orders.filter((o) => o.paymentMethod === 'cash' || o.paymentMethod === 'split').length, 0),
+          cardTxCount: roster.reduce((s, r) => s + r.orders.filter((o) => o.paymentMethod === 'card' || o.paymentMethod === 'split').length, 0),
+        },
+        orderMetrics: {
+          dineInCount,
+          takeawayCount,
+          paidCount,
+          openCount,
+          servedCount,
+          voidCount,
+          covers,
+          itemCount,
+        },
+        tables: roster,
+        ingredientDepletions,
+      });
     }
 
+    const company = branches.reduce(
+      (acc, b) => {
+        acc.totalOrders += b.financialSummary.totalOrders;
+        acc.grossSales += b.financialSummary.grossSales;
+        acc.cashTotal += b.paymentSummary.cashTotal;
+        acc.cardTotal += b.paymentSummary.cardTotal;
+        acc.unpaidTotal += b.financialSummary.unpaidTotal;
+        acc.dineInCount += b.orderMetrics.dineInCount;
+        acc.takeawayCount += b.orderMetrics.takeawayCount;
+        acc.paidCount += b.orderMetrics.paidCount;
+        acc.openCount += b.orderMetrics.openCount;
+        acc.servedCount += b.orderMetrics.servedCount;
+        acc.voidCount += b.orderMetrics.voidCount;
+        acc.covers += b.orderMetrics.covers;
+        acc.itemCount += b.orderMetrics.itemCount;
+        acc.tableCount += b.tableCount;
+        acc.tablesUtilized += b.tablesUtilized;
+        acc.cashTxCount += b.paymentSummary.cashTxCount;
+        acc.cardTxCount += b.paymentSummary.cardTxCount;
+        acc.occupiedNow += b.occupiedNow;
+        return acc;
+      },
+      {
+        totalOrders: 0,
+        grossSales: 0,
+        cashTotal: 0,
+        cardTotal: 0,
+        unpaidTotal: 0,
+        dineInCount: 0,
+        takeawayCount: 0,
+        paidCount: 0,
+        openCount: 0,
+        servedCount: 0,
+        voidCount: 0,
+        covers: 0,
+        itemCount: 0,
+        tableCount: 0,
+        tablesUtilized: 0,
+        cashTxCount: 0,
+        cardTxCount: 0,
+        occupiedNow: 0,
+      },
+    );
+
+    const taxAmount = company.grossSales * 0.14;
     const ingredientDepletions = [];
-    for (const [ingId, usedQty] of usageMap.entries()) {
-      const ing = ingMap.get(ingId);
-      if (ing) {
-        ingredientDepletions.push({
-          id: ingId,
-          name: ing.name,
-          unit: ing.unit,
-          qtyDepleted: usedQty,
-          currentStockRemaining: ing.stock_qty,
-        });
+    const depMap = new Map();
+    for (const b of branches) {
+      for (const dep of b.ingredientDepletions) {
+        const cur = depMap.get(dep.name) || { ...dep, qtyDepleted: 0, currentStockRemaining: 0 };
+        cur.qtyDepleted += dep.qtyDepleted;
+        cur.currentStockRemaining += dep.currentStockRemaining;
+        depMap.set(dep.name, cur);
       }
     }
-
-    const taxAmount = grossSales * 0.14;
-    const netSales = grossSales - taxAmount;
+    for (const dep of depMap.values()) ingredientDepletions.push(dep);
 
     return {
       reportDate: targetDate,
-      branchId,
       generatedAt: new Date().toISOString(),
+      tenantName: 'DINLYO Restaurant Group',
+      branchCount: branches.length,
+      scope: branchId ? 'branch' : 'all',
       financialSummary: {
-        totalOrders: dayOrders.length,
-        grossSales,
-        netSales,
+        totalOrders: company.totalOrders,
+        grossSales: company.grossSales,
+        netSales: company.grossSales - taxAmount,
         taxAmount,
+        unpaidTotal: company.unpaidTotal,
         currency: 'EGP',
       },
       paymentSummary: {
-        cashTotal,
-        cashTxCount,
-        cardTotal,
-        cardTxCount,
-        totalCollected: cashTotal + cardTotal,
+        cashTotal: company.cashTotal,
+        cashTxCount: company.cashTxCount,
+        cardTotal: company.cardTotal,
+        cardTxCount: company.cardTxCount,
+        totalCollected: company.cashTotal + company.cardTotal,
       },
       orderMetrics: {
-        dineInCount,
-        takeawayCount,
-        openCount,
-        servedCount,
-        paidCount,
-        voidCount,
+        dineInCount: company.dineInCount,
+        takeawayCount: company.takeawayCount,
+        openCount: company.openCount,
+        servedCount: company.servedCount,
+        paidCount: company.paidCount,
+        voidCount: company.voidCount,
+        covers: company.covers,
+        itemCount: company.itemCount,
+        tableCount: company.tableCount,
+        tablesUtilized: company.tablesUtilized,
+        occupiedNow: company.occupiedNow,
       },
+      hourlySales: [...hourlyMap.values()].sort((a, b) => a.hour.localeCompare(b.hour)),
+      topItems: [...itemSalesMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 12),
       ingredientDepletions,
-      recentOrders: dayOrders.slice(0, 15),
+      branches,
     };
   }
 }

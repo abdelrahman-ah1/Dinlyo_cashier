@@ -65,47 +65,104 @@ export class HardwareBridge {
   }
 
   buildCustomerReceiptEscPos(order, payment = {}) {
+    const W = 32;
+    const stars = '*'.repeat(W);
+    const money = (n) => (Number(n) || 0).toFixed(1);
+    const row = (left, right) => {
+      const l = String(left);
+      const r = String(right);
+      const gap = Math.max(1, W - l.length - r.length);
+      return `${l}${' '.repeat(gap)}${r}`;
+    };
+
+    const shopName = payment.shop_name || order.shop_name || 'DINLYO';
+    const address = payment.shop_address || order.shop_address || 'Address: Downtown Branch, Cairo';
+    const phone = payment.shop_phone || order.shop_phone || 'Telp. 11223344';
+    const method = String(payment.method || 'cash').toLowerCase();
+    const totalVal = Number(order.total) || 0;
+    const cashTendered = payment.cash_tendered != null && payment.cash_tendered !== ''
+      ? Number(payment.cash_tendered)
+      : (method === 'cash' ? totalVal : null);
+    const changeVal = cashTendered != null ? Math.max(0, cashTendered - totalVal) : null;
+    const orderNum = String(order.id || order._id || '000000').slice(-8).toUpperCase();
+    const showCard = method === 'card';
+    const showCash = method === 'cash';
+    const cardLast4 = payment.card_last4 || (showCard ? orderNum.slice(-4) : null);
+    const approval = payment.approval_code
+      || (showCard && payment.idempotency_key ? `#${String(payment.idempotency_key).replace(/[^a-z0-9]/gi, '').slice(0, 6).toUpperCase()}` : null);
+    const tableLabel = order.table_number
+      ? `Table ${order.table_number}`
+      : (order.order_type === 'takeaway' ? 'Takeaway' : null);
+    const subtitle = [tableLabel, `#${orderNum.slice(-6)}`].filter(Boolean).join(' - ');
+
+    const items = (Array.isArray(order.items) ? order.items : []).map((item) => {
+      const qty = item.quantity || 1;
+      const name = item.item_name || item.name || 'Item';
+      const description = qty > 1 ? `${qty}x ${name}` : name;
+      const price = (item.price || 0) * qty;
+      return { description, price };
+    });
+
+    const layout = {
+      shopName,
+      address,
+      phone,
+      title: 'CASH RECEIPT',
+      subtitle,
+      items: items.map((it) => ({ description: it.description, price: money(it.price) })),
+      total: money(totalVal),
+      cash: showCash && cashTendered != null ? money(cashTendered) : null,
+      change: showCash && changeVal != null ? money(changeVal) : null,
+      cardMasked: showCard && cardLast4 ? `--- --- --- ${cardLast4}` : null,
+      approvalCode: showCard ? approval : null,
+      barcodeValue: orderNum,
+    };
+
     const lines = [];
-    const dateStr = new Date().toLocaleString();
-    const orderNum = (order.id || order._id || '').slice(-6).toUpperCase();
-
     lines.push(`${ESC}@`);
-    lines.push(`${ESC}a\x01`);
-    lines.push(`${ESC}!\x38DEMO RESTAURANT\n`);
-    lines.push(`${ESC}!\x00Downtown Branch • Cairo, Egypt\n`);
-    lines.push(`TAX ID: 492-819-301\n`);
-    lines.push(`Date: ${dateStr}\n`);
-    lines.push(`Receipt #: REC-${orderNum}\n`);
-    lines.push(`Order: #${orderNum} (${order.order_type.toUpperCase()})\n`);
-    lines.push('--------------------------------\n');
 
+    // Header — centered shop identity
+    lines.push(`${ESC}a\x01`);
+    lines.push(`${ESC}!\x18${shopName}\n`);
+    lines.push(`${ESC}!\x00${address}\n`);
+    lines.push(`${phone}\n`);
+    lines.push(`${stars}\n`);
+    lines.push('CASH RECEIPT\n');
+    if (subtitle) lines.push(`${ESC}!\x00${subtitle}\n`);
+    lines.push(`${stars}\n`);
+
+    // Items — left/right columns
     lines.push(`${ESC}a\x00`);
-    if (Array.isArray(order.items)) {
-      for (const item of order.items) {
-        const lineTotal = (item.price || 0) * (item.quantity || 1);
-        const namePart = `${item.quantity}x ${item.item_name}`.padEnd(22).slice(0, 22);
-        const pricePart = `${lineTotal.toFixed(2)}`.padStart(10);
-        lines.push(`${namePart}${pricePart}\n`);
-      }
+    lines.push(`${ESC}E\x01${row('Description', 'Price')}\n${ESC}E\x00`);
+    for (const item of items) {
+      lines.push(`${row(item.description.slice(0, 20), money(item.price))}\n`);
+    }
+    lines.push(`${stars}\n`);
+
+    // Totals
+    lines.push(`${ESC}E\x01${row('Total', money(totalVal))}\n${ESC}E\x00`);
+    if (layout.cash != null) lines.push(`${row('Cash', layout.cash)}\n`);
+    if (layout.change != null) lines.push(`${row('Change', layout.change)}\n`);
+    lines.push(`${stars}\n`);
+
+    // Card / approval (when tendered by card, or shown on the template)
+    if (layout.cardMasked) {
+      lines.push(`${row('Bank card', layout.cardMasked)}\n`);
+      lines.push(`${row('Approval Code', layout.approvalCode)}\n`);
+      lines.push(`${stars}\n`);
     }
 
-    lines.push('--------------------------------\n');
-    const total = (order.total || 0).toFixed(2);
-    const tax = (order.total ? order.total * 0.14 : 0).toFixed(2);
-    lines.push(`${'Subtotal (Excl Tax):'.padEnd(20)}${((order.total || 0) * 0.86).toFixed(2).padStart(12)}\n`);
-    lines.push(`${'VAT (14%):'.padEnd(20)}${tax.padStart(12)}\n`);
-    lines.push(`${ESC}!\x20${'TOTAL:'.padEnd(16)}${total.padStart(16)}\n`);
-    lines.push(`${ESC}!\x00`);
-    lines.push('--------------------------------\n');
-    lines.push(`Paid via: ${(payment.method || 'CASH').toUpperCase()}\n`);
-    if (payment.idempotency_key) {
-      lines.push(`Auth Ref: ${payment.idempotency_key.slice(0, 12)}...\n`);
-    }
+    // Footer + barcode
     lines.push(`${ESC}a\x01`);
-    lines.push('\nThank you for dining with us!\nPlease come again.\n\n\n');
+    lines.push(`${ESC}E\x01THANK YOU!\n${ESC}E\x00`);
+    lines.push(`${GS}h${String.fromCharCode(60)}`);
+    lines.push(`${GS}w${String.fromCharCode(2)}`);
+    lines.push(`${GS}H${String.fromCharCode(2)}`);
+    lines.push(`${GS}k\x04${orderNum}\x00`);
+    lines.push('\n\n');
     lines.push(`${GS}V\x00`);
 
-    return lines.join('');
+    return { raw: lines.join(''), layout };
   }
 
   // -------------------------------------------------------------------------
@@ -137,7 +194,7 @@ export class HardwareBridge {
 
   // FR-5.2: Print Customer Receipt
   async printCustomerReceipt(order, payment = {}) {
-    const rawEscPos = this.buildCustomerReceiptEscPos(order, payment);
+    const { raw: rawEscPos, layout } = this.buildCustomerReceiptEscPos(order, payment);
     const job = {
       id: nanoid(),
       type: 'CUSTOMER_RECEIPT',
@@ -147,6 +204,7 @@ export class HardwareBridge {
       timestamp: new Date().toISOString(),
       rawLength: rawEscPos.length,
       previewText: this.escPosToPlainText(rawEscPos),
+      layout,
     };
 
     this.spoolerLogs.unshift(job);
@@ -212,8 +270,13 @@ export class HardwareBridge {
       .replace(/\x1B@/g, '')
       .replace(/\x1Ba[\x00-\x02]/g, '')
       .replace(/\x1B![\s\S]/g, '')
+      .replace(/\x1BE[\x00-\x01]/g, '')
+      .replace(/\x1Dh[\s\S]/g, '')
+      .replace(/\x1Dw[\s\S]/g, '')
+      .replace(/\x1DH[\s\S]/g, '')
+      .replace(/\x1Dk[\s\S][\s\S]*?\x00/g, '\n')
       .replace(/\x1Dp[\s\S]{3}/g, '')
-      .replace(/\x1DV\x00/g, '\n[=== PAPER CUT ===]\n');
+      .replace(/\x1DV\x00/g, '\n');
   }
 
   getSpoolerStatus() {
